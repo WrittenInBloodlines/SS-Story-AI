@@ -1,1 +1,86 @@
-import{getProject,save,newId,esc}from'./storage.js';const p=getProject();if(!p)location.href='../index.html';const db=JSON.parse(localStorage.getItem('ss-story-ai-v1'));function render(){document.querySelector('#memory-list').innerHTML=p.memory.length?p.memory.map(m=>`<article class="card"><div><b>${esc(m.title)}</b><div class="muted">${esc(m.text)}</div></div></article>`).join(''):'<div class="panel"><b>Memory ist leer</b><span class="muted">Füge hier bewusstes, dauerhaftes Wissen hinzu.</span></div>'}document.querySelector('#add-memory').onclick=()=>{const title=prompt('Titel');if(!title)return;const text=prompt('Information');if(!text)return;p.memory.push({id:newId('memory'),title,text,locked:false});save(db);render()};render();
+import { getProject, updateProject, newId, esc } from './storage.js';
+
+const project = getProject();
+if (!project) location.href = '../index.html';
+
+const list = document.querySelector('#memory-list');
+const addButton = document.querySelector('#add-memory');
+
+function render() {
+  const memory = getProject()?.memory || [];
+  list.innerHTML = memory.length
+    ? memory.map(entry => `
+      <article class="card">
+        <div class="card-main">
+          <div>
+            <h2>${esc(entry.title)}</h2>
+            <p class="muted">${esc(entry.text)}</p>
+            <small class="muted">${entry.locked ? 'Locked memory' : 'Editable memory'}</small>
+          </div>
+          <div class="card-actions">
+            <button class="secondary" data-action="edit" data-id="${entry.id}">Edit</button>
+            <button class="danger" data-action="delete" data-id="${entry.id}">Delete</button>
+          </div>
+        </div>
+      </article>
+    `).join('')
+    : `<div class="panel"><b>No memory entries yet</b><span class="muted">Add information that should remain available across chats.</span></div>`;
+}
+
+function createMemory() {
+  const title = prompt('Memory title');
+  if (!title?.trim()) return;
+  const text = prompt('Memory information');
+  if (!text?.trim()) return;
+  updateProject(project => {
+    project.memory.push({
+      id: newId('memory'),
+      title: title.trim(),
+      text: text.trim(),
+      locked: false,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    });
+  });
+  render();
+}
+
+function editMemory(id) {
+  const entry = getProject()?.memory.find(item => item.id === id);
+  if (!entry) return;
+  const title = prompt('Memory title', entry.title);
+  if (!title?.trim()) return;
+  const text = prompt('Memory information', entry.text);
+  if (!text?.trim()) return;
+  const locked = confirm('Lock this memory entry? Locked entries are intended to be protected from automatic changes later.');
+  updateProject(project => {
+    const item = project.memory.find(memory => memory.id === id);
+    if (item) {
+      item.title = title.trim();
+      item.text = text.trim();
+      item.locked = locked;
+      item.updatedAt = Date.now();
+    }
+  });
+  render();
+}
+
+function deleteMemory(id) {
+  const entry = getProject()?.memory.find(item => item.id === id);
+  if (!entry) return;
+  if (!confirm(`Delete memory "${entry.title}"?`)) return;
+  updateProject(project => {
+    project.memory = project.memory.filter(item => item.id !== id);
+  });
+  render();
+}
+
+addButton.addEventListener('click', createMemory);
+list.addEventListener('click', event => {
+  const button = event.target.closest('[data-action]');
+  if (!button) return;
+  if (button.dataset.action === 'edit') editMemory(button.dataset.id);
+  if (button.dataset.action === 'delete') deleteMemory(button.dataset.id);
+});
+
+render();
