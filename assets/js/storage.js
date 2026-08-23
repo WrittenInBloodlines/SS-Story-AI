@@ -39,7 +39,18 @@ export function projectId() {
 
 export function getProject() {
   const db = load();
-  return db.projects.find(project => project.id === projectId());
+  return db.projects.find(project => project.id === projectId()) || null;
+}
+
+export function updateProject(mutator) {
+  const db = load();
+  const project = db.projects.find(item => item.id === projectId());
+  if (!project) return null;
+  ensureProjectShape(project);
+  mutator(project, db);
+  touch(project);
+  save(db);
+  return project;
 }
 
 export function ensureProjectShape(project) {
