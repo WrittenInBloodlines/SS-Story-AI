@@ -1,5 +1,38 @@
-import{load,save,newId,go,esc}from'./storage.js';
-const db=load();
-const list=document.querySelector('#project-list');
-function render(){list.innerHTML='';document.querySelector('#project-count').textContent=`${db.projects.length} Projekt${db.projects.length===1?'':'e'}`;if(!db.projects.length){list.innerHTML='<div class="panel"><b>Noch keine Projekte</b><span class="muted">Erstelle dein erstes Story-Universum.</span></div>';return}for(const p of db.projects){const a=document.createElement('a');a.className='project-card';a.href=`pages/project.html?project=${p.id}`;a.innerHTML=`<b>📕 ${esc(p.name)}</b><span class="muted">${esc(p.description||'Keine Beschreibung')}</span><small>${p.chapters?.length||0} Kapitel · ${p.characters?.length||0} Charaktere</small>`;list.appendChild(a)}}
-document.querySelector('[data-action="new-project"]').onclick=()=>location.href='create-project.html';document.querySelector('[data-action="settings"]').onclick=()=>alert('Einstellungen kommen als eigener Bereich.');render();
+import { load, esc } from './storage.js';
+
+const db = load();
+const list = document.querySelector('#project-list');
+const count = document.querySelector('#project-count');
+
+function render() {
+  list.innerHTML = '';
+  const total = db.projects.length;
+  count.textContent = `${total} project${total === 1 ? '' : 's'}`;
+
+  if (!total) {
+    list.innerHTML = '<div class="panel"><b>No projects yet</b><span class="muted">Create your first story universe.</span></div>';
+    return;
+  }
+
+  for (const project of db.projects) {
+    const card = document.createElement('a');
+    card.className = 'project-card';
+    card.href = `pages/project.html?project=${encodeURIComponent(project.id)}`;
+    card.innerHTML = `
+      <b>${esc(project.name)}</b>
+      <span class="muted">${esc(project.description || 'No description')}</span>
+      <small>${project.chapters?.length || 0} chapters · ${project.characters?.length || 0} characters</small>
+    `;
+    list.appendChild(card);
+  }
+}
+
+document.querySelector('[data-action="new-project"]').addEventListener('click', () => {
+  location.href = 'create-project.html';
+});
+
+document.querySelector('[data-action="settings"]').addEventListener('click', () => {
+  window.alert('Settings will be available in a dedicated section.');
+});
+
+render();
