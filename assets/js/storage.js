@@ -4,7 +4,12 @@ function emptyDatabase() {
   return {
     version: 1,
     projects: [],
-    settings: { theme: 'dark', storyLength: 'very-long', creativity: 'controlled', autosave: true }
+    settings: {
+      theme: 'dark',
+      storyLength: 'very-long',
+      creativity: 'controlled',
+      autosave: true
+    }
   };
 }
 
@@ -34,7 +39,7 @@ export function projectId() {
 
 export function getProject() {
   const db = load();
-  return db.projects.find(p => p.id === projectId());
+  return db.projects.find(project => project.id === projectId());
 }
 
 export function ensureProjectShape(project) {
@@ -64,7 +69,13 @@ export function go(page, id = projectId()) {
 }
 
 export function esc(value = '') {
-  return String(value).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[c]));
+  return String(value).replace(/[&<>"']/g, character => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#039;'
+  }[character]));
 }
 
 export function touch(project) {
