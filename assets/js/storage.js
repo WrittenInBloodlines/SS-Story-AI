@@ -1,8 +1,10 @@
+import { CURRENT_SCHEMA_VERSION, migrateProject } from './core/schema.js';
+
 const KEY = 'ss-story-ai-v1';
 
 function emptyDatabase() {
   return {
-    version: 1,
+    version: CURRENT_SCHEMA_VERSION,
     projects: [],
     settings: {
       theme: 'dark',
@@ -17,12 +19,21 @@ export function load() {
   try {
     const raw = localStorage.getItem(KEY);
     if (!raw) return emptyDatabase();
+
     const db = JSON.parse(raw);
-    return {
+    const projects = Array.isArray(db.projects)
+      ? db.projects.map(migrateProject).filter(Boolean)
+      : [];
+
+    const normalized = {
       ...emptyDatabase(),
       ...db,
-      projects: Array.isArray(db.projects) ? db.projects.map(ensureProjectShape) : []
+      version: CURRENT_SCHEMA_VERSION,
+      projects
     };
+
+    localStorage.setItem(KEY, JSON.stringify(normalized));
+    return normalized;
   } catch {
     return emptyDatabase();
   }
@@ -46,27 +57,19 @@ export function updateProject(mutator) {
   const db = load();
   const project = db.projects.find(item => item.id === projectId());
   if (!project) return null;
-  ensureProjectShape(project);
-  mutator(project, db);
-  touch(project);
+
+  const migrated = migrateProject(project);
+  const index = db.projects.indexOf(project);
+  db.projects[index] = migrated;
+
+  mutator(migrated, db);
+  touch(migrated);
   save(db);
-  return project;
+  return migrated;
 }
 
 export function ensureProjectShape(project) {
-  const p = project || {};
-  p.characters ??= [];
-  p.world ??= [];
-  p.memory ??= [];
-  p.plot ??= [];
-  p.chapters ??= [];
-  p.chats ??= [];
-  p.media ??= [];
-  p.relationships ??= [];
-  p.events ??= [];
-  p.settings ??= { storyLength: 'very-long', creativity: 'controlled' };
-  p.updatedAt ??= Date.now();
-  return p;
+  return migrateProject(project);
 }
 
 export function newId(prefix = 'id') {
@@ -90,7 +93,7 @@ export function esc(value = '') {
 }
 
 export function touch(project) {
-  project.updatedAt = Date.now();
+  project.updatedAt = new Date().toISOString();
   return project;
 }
 
