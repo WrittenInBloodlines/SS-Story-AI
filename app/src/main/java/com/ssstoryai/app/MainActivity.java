@@ -19,7 +19,7 @@ import androidx.webkit.WebViewAssetLoader;
 import org.json.JSONObject;
 
 import java.io.File;
-import java.io.FileInputStream;
+import java.io.InputStream;
 import java.io.FileOutputStream;
 
 public class MainActivity extends Activity {
@@ -62,11 +62,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String generateGemma(String payload) {
             if (gemmaRuntime == null) {
-                return new JSONObject()
-                        .put("ok", false)
-                        .put("code", "LOCAL_MODEL_UNAVAILABLE")
-                        .put("message", "The local Gemma runtime is unavailable.")
-                        .toString();
+                return "{\"ok\":false,\"code\":\"LOCAL_MODEL_UNAVAILABLE\",\"message\":\"The local Gemma runtime is unavailable.\"}";
             }
             return gemmaRuntime.generate(payload);
         }
@@ -74,10 +70,7 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public String gemmaStatus() {
             boolean loaded = gemmaRuntime != null && gemmaRuntime.isLoaded();
-            return new JSONObject()
-                    .put("loaded", loaded)
-                    .put("model", loaded ? "Gemma • Local Android" : "No local model loaded")
-                    .toString();
+            return "{\"loaded\":" + loaded + ",\"model\":\"" + (loaded ? "Gemma • Local Android" : "No local model loaded") + "\"}";
         }
 
         @JavascriptInterface
@@ -160,7 +153,7 @@ public class MainActivity extends Activity {
     }
 
     private void copyUriToFile(Uri uri, File destination) throws Exception {
-        try (FileInputStream input = (FileInputStream) getContentResolver().openInputStream(uri);
+        try (InputStream input = getContentResolver().openInputStream(uri);
              FileOutputStream output = new FileOutputStream(destination, false)) {
             if (input == null) throw new IllegalStateException("The selected file could not be opened.");
             byte[] buffer = new byte[1024 * 1024];
