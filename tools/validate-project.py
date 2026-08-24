@@ -39,9 +39,9 @@ def main() -> int:
     known = set(all_files)
     missing: list[tuple[Path, str, Path]] = []
 
-    html_pattern = re.compile(r'''(?:src|href)\\s*=\\s*["']([^"']+)["']''', re.I)
-    css_pattern = re.compile(r'''url\\(\\s*["']?([^"')]+)["']?\\s*\\)''', re.I)
-    js_pattern = re.compile(r'''(?:from\\s*|import\\s*\\(\\s*)["']([^"']+)["']''', re.I)
+    html_pattern = re.compile(r'''(?:src|href)\s*=\s*["']([^"']+)["']''', re.I)
+    css_pattern = re.compile(r'''url\(\s*["']?([^"')]+)["']?\s*\)''', re.I)
+    js_pattern = re.compile(r'''(?:from\s*|import\s*\(\s*)["']([^"']+)["']''', re.I)
 
     for source in all_files:
         if source.suffix not in {'.html', '.js', '.css'}:
