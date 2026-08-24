@@ -19,17 +19,24 @@ public class MainActivity extends Activity {
 
     public class AndroidBridge {
         @JavascriptInterface
-        public void printPage() {
+        public void printPage(String format) {
             runOnUiThread(() -> {
                 PrintManager printManager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
                 if (printManager == null || webView == null) return;
+
+                PrintAttributes.MediaSize mediaSize = PrintAttributes.MediaSize.ISO_A5;
+                if ("a4".equalsIgnoreCase(format)) {
+                    mediaSize = PrintAttributes.MediaSize.ISO_A4;
+                } else if ("letter".equalsIgnoreCase(format)) {
+                    mediaSize = PrintAttributes.MediaSize.NA_LETTER;
+                }
 
                 String jobName = "S•S Story AI Book";
                 printManager.print(
                         jobName,
                         webView.createPrintDocumentAdapter(jobName),
                         new PrintAttributes.Builder()
-                                .setMediaSize(PrintAttributes.MediaSize.ISO_A4)
+                                .setMediaSize(mediaSize)
                                 .setMinMargins(PrintAttributes.Margins.NO_MARGINS)
                                 .build()
                 );
@@ -40,10 +47,8 @@ public class MainActivity extends Activity {
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-
         webView = new WebView(this);
         setContentView(webView);
-
         webView.getSettings().setJavaScriptEnabled(true);
         webView.getSettings().setDomStorageEnabled(true);
         webView.getSettings().setAllowFileAccess(false);
@@ -54,24 +59,19 @@ public class MainActivity extends Activity {
         WebViewAssetLoader assetLoader = new WebViewAssetLoader.Builder()
                 .addPathHandler("/assets/", new WebViewAssetLoader.AssetsPathHandler(this))
                 .build();
-
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public WebResourceResponse shouldInterceptRequest(WebView view, WebResourceRequest request) {
                 return assetLoader.shouldInterceptRequest(request.getUrl());
             }
         });
-
         webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
     }
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
-        }
+        if (webView != null && webView.canGoBack()) webView.goBack();
+        else super.onBackPressed();
     }
 
     @Override
