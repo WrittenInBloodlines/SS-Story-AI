@@ -11,7 +11,7 @@ const description = document.querySelector('#description');
 const projectName = document.querySelector('#project-name');
 
 title.textContent = project.name;
-description.textContent = project.description || 'Noch keine Beschreibung';
+description.textContent = project.description || 'No description yet.';
 if (projectName) projectName.textContent = project.name;
 
 const currentPage = location.pathname.split('/').pop();
@@ -25,11 +25,11 @@ document.querySelector('[data-action="chat"]')?.addEventListener('click', () => 
 
 document.querySelector('[data-action="settings"]')?.addEventListener('click', () => {
   const db = load();
-  const current = db.projects.find(p => p.id === project.id);
+  const current = db.projects.find(item => item.id === project.id);
   if (!current) return;
-  const next = prompt('Story-Länge: kurz, normal, lang, sehr-lang', current.settings?.storyLength || 'sehr-lang');
+  const next = prompt('Story length: short, normal, long, very-long', current.settings?.storyLength || 'very-long');
   if (!next) return;
-  current.settings.storyLength = next;
+  current.settings.storyLength = next.trim();
   touch(current);
   save(db);
 });
