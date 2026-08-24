@@ -2,8 +2,18 @@
 .book-controls select, .book-controls input { width: auto; }
 .book { overflow-wrap: anywhere; }
 .book #book-content { min-height: 160mm; }
+.book[data-format="A4"] { width: 210mm; min-height: 297mm; }
+.book[data-format="A5"] { width: 148mm; min-height: 210mm; }
+.book[data-format="Letter"] { width: 8.5in; min-height: 11in; }
+.book #book-content section { break-inside: avoid; }
+@media (max-width: 700px) {
+  .book[data-format="A4"], .book[data-format="A5"], .book[data-format="Letter"] { width: 100%; min-height: 0; }
+}
 @media print {
   body { background: #fff; }
   .topbar, .book-controls { display: none; }
   .book { margin: 0; box-shadow: none; }
+  .book[data-format="A4"] { width: 210mm; min-height: 297mm; }
+  .book[data-format="A5"] { width: 148mm; min-height: 210mm; }
+  .book[data-format="Letter"] { width: 8.5in; min-height: 11in; }
 }
