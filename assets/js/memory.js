@@ -7,7 +7,7 @@ const list = document.querySelector('#memory-list');
 const addButton = document.querySelector('#add-memory');
 
 function render() {
-  const memory = getProject()?.memory || [];
+  const memory = getProject()?.memories || [];
   list.innerHTML = memory.length
     ? memory.map(entry => `
       <article class="card">
@@ -33,7 +33,7 @@ function createMemory() {
   const text = prompt('Memory information');
   if (!text?.trim()) return;
   updateProject(project => {
-    project.memory.push({
+    project.memories.push({
       id: newId('memory'),
       title: title.trim(),
       text: text.trim(),
@@ -46,7 +46,7 @@ function createMemory() {
 }
 
 function editMemory(id) {
-  const entry = getProject()?.memory.find(item => item.id === id);
+  const entry = getProject()?.memories.find(item => item.id === id);
   if (!entry) return;
   const title = prompt('Memory title', entry.title);
   if (!title?.trim()) return;
@@ -54,7 +54,7 @@ function editMemory(id) {
   if (!text?.trim()) return;
   const locked = confirm('Lock this memory entry? Locked entries are intended to be protected from automatic changes later.');
   updateProject(project => {
-    const item = project.memory.find(memory => memory.id === id);
+    const item = project.memories.find(memory => memory.id === id);
     if (item) {
       item.title = title.trim();
       item.text = text.trim();
@@ -66,11 +66,11 @@ function editMemory(id) {
 }
 
 function deleteMemory(id) {
-  const entry = getProject()?.memory.find(item => item.id === id);
+  const entry = getProject()?.memories.find(item => item.id === id);
   if (!entry) return;
   if (!confirm(`Delete memory "${entry.title}"?`)) return;
   updateProject(project => {
-    project.memory = project.memory.filter(item => item.id !== id);
+    project.memories = project.memories.filter(item => item.id !== id);
   });
   render();
 }
