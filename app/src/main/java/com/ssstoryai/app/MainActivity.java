@@ -59,12 +59,44 @@ public class MainActivity extends Activity {
             });
         }
 
+        /**
+         * Starts local Gemma generation without blocking the WebView JavaScript
+         * bridge. The previous synchronous bridge call could leave the WebView
+         * waiting for the entire native inference, which made the app appear
+         * frozen while Gemma was generating.
+         */
         @JavascriptInterface
-        public String generateGemma(String payload) {
+        public void generateGemmaAsync(String requestId, String payload) {
             if (gemmaRuntime == null) {
-                return "{\"ok\":false,\"code\":\"LOCAL_MODEL_UNAVAILABLE\",\"message\":\"The local Gemma runtime is unavailable.\"}";
+                notifyGemmaGeneration(requestId, false, "LOCAL_MODEL_UNAVAILABLE", "The local Gemma runtime is unavailable.", "");
+                return;
             }
-            return gemmaRuntime.generate(payload);
+
+            new Thread(() -> {
+                String result;
+                try {
+                    result = gemmaRuntime.generate(payload);
+                } catch (Throwable error) {
+                    result = "{\"ok\":false,\"code\":\"LOCAL_MODEL_FAILED\",\"message\":\"Gemma generation failed.\"}";
+                }
+
+                try {
+                    JSONObject data = new JSONObject(result);
+                    boolean ok = data.optBoolean("ok", false);
+                    String code = data.optString("code", ok ? "" : "LOCAL_MODEL_FAILED");
+                    String message = data.optString("message", "");
+                    String text = data.optString("text", "");
+                    notifyGemmaGeneration(requestId, ok, code, message, text);
+                } catch (Throwable error) {
+                    notifyGemmaGeneration(
+                            requestId,
+                            false,
+                            "LOCAL_MODEL_INVALID_RESPONSE",
+                            "The local model returned an invalid response.",
+                            ""
+                    );
+                }
+            }, "gemma-generation").start();
         }
 
         @JavascriptInterface
@@ -148,6 +180,20 @@ public class MainActivity extends Activity {
             if (webView == null) return;
             String script = "window.dispatchEvent(new CustomEvent('ss-gemma-status',{detail:{ok:" + ok
                     + ",message:" + JSONObject.quote(message) + "}}));";
+            webView.evaluateJavascript(script, null);
+        });
+    }
+
+    private void notifyGemmaGeneration(String requestId, boolean ok, String code, String message, String text) {
+        runOnUiThread(() -> {
+            if (webView == null) return;
+            String script = "window.dispatchEvent(new CustomEvent('ss-gemma-generation',{detail:{requestId:"
+                    + JSONObject.quote(requestId == null ? "" : requestId)
+                    + ",ok:" + ok
+                    + ",code:" + JSONObject.quote(code == null ? "" : code)
+                    + ",message:" + JSONObject.quote(message == null ? "" : message)
+                    + ",text:" + JSONObject.quote(text == null ? "" : text)
+                    + "}}));";
             webView.evaluateJavascript(script, null);
         });
     }
