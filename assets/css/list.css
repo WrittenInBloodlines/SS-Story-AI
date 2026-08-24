@@ -4,10 +4,11 @@
 .card-list .card button { flex: 0 0 auto; }
 .card-list .card p { margin: 6px 0 0; color: var(--muted); }
 .card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
-.card-actions button { min-height: 36px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-weight: 700; cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+.card-actions button { min-height: 38px; padding: 8px 13px; border: 1px solid var(--border); border-radius: 11px; font: inherit; font-weight: 700; cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .16s ease, box-shadow .16s ease; }
 .card-actions button:hover { transform: translateY(-1px); }
-.card-actions .secondary { background: #17131b; color: var(--text); border-color: #3b3242; }
-.card-actions .danger { background: #21151b; color: #e8c6cf; border-color: #53333f; }
+.card-actions .secondary { background: #17131b !important; color: var(--text) !important; border-color: #3b3242 !important; }
+.card-actions .danger { background: #261827 !important; color: #dfc8ef !important; border: 1px solid #644a76 !important; border-radius: 11px !important; box-shadow: inset 0 1px 0 rgba(255,255,255,.025); }
+.card-actions .danger:hover { background: #302038 !important; border-color: #806096 !important; box-shadow: 0 7px 20px rgba(170,127,218,.12); }
 .card-actions small { color: var(--muted); font-weight: 700; padding: 0 4px; }
 @media (max-width: 700px) {
   .section-head { align-items: flex-start; flex-direction: column; }
