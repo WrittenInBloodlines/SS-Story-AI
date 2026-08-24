@@ -1,7 +1,34 @@
 <!doctype html>
 <html lang="en">
-<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Chat • S•S Story AI</title><link rel="stylesheet" href="../assets/css/base.css"><link rel="stylesheet" href="../assets/css/chat.css"></head>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Chat • S•S Story AI</title>
+  <link rel="stylesheet" href="../assets/css/base.css">
+  <link rel="stylesheet" href="../assets/css/chat.css">
+</head>
 <body>
-<header class="topbar"><a class="brand" href="../index.html">S•S <span>Story AI</span></a><span id="chat-title">Chat</span><a class="back" href="project.html">Project</a></header>
-<main class="chat-shell"><div id="messages" class="messages"><div class="empty"><h2>Your Story Chat</h2><p>No language model is connected yet. The foundation can already store your messages.</p></div></div><form id="chat-form" class="composer"><textarea id="message" rows="2" placeholder="Write something..."></textarea><button class="primary" type="submit">Send</button></form></main>
-<script type="module" src="../assets/js/chat.js"></script></body></html>
+  <header class="topbar">
+    <a class="brand" href="../index.html">S•S <span>Story AI</span></a>
+    <span id="chat-title">Chat</span>
+    <a class="back" href="project.html">Project</a>
+  </header>
+
+  <main class="chat-shell">
+    <section id="continuity-warnings" class="continuity-panel" hidden></section>
+    <div id="messages" class="messages">
+      <div class="empty">
+        <h2>Your Story Chat</h2>
+        <p>No language model is connected yet. The foundation can already store your messages.</p>
+      </div>
+    </div>
+
+    <form id="chat-form" class="composer">
+      <textarea id="message" rows="2" placeholder="Write something..."></textarea>
+      <button class="primary" type="submit">Send</button>
+    </form>
+  </main>
+
+  <script type="module" src="../assets/js/chat.js"></script>
+</body>
+</html>
