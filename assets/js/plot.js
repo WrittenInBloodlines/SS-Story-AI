@@ -7,7 +7,7 @@ const addButton = document.querySelector('#add-plot');
 
 function render() {
   const plot = getProject()?.plot || [];
-  list.innerHTML = plot.length ? plot.map(thread => `<article class="card"><div><b>${esc(thread.title)}</b><div class="muted">${esc(thread.text)}</div></div><div class="card-actions"><small>${esc(thread.status || 'Open')}</small><button class="secondary" data-open="${thread.id}">Open</button><button class="danger" data-delete="${thread.id}">Delete</button></div></article>`).join('') : '<div class="panel"><b>No story threads</b><span class="muted">Open storylines, secrets, and unresolved questions will appear here.</span></div>';
+  list.innerHTML = plot.length ? plot.map(thread => `<article class="card"><div class="card-main"><div><b>${esc(thread.title)}</b><p class="muted">${esc(thread.text)}</p><small class="muted">${esc(thread.status || 'Open')}</small></div><div class="card-actions"><button class="secondary" data-action="open" data-id="${thread.id}">Open</button><button class="danger" data-action="delete" data-id="${thread.id}">Delete</button></div></div></article>`).join('') : '<div class="panel"><b>No story threads</b><span class="muted">Open storylines, secrets, and unresolved questions will appear here.</span></div>';
 }
 
 async function addPlot() {
@@ -26,11 +26,12 @@ async function openPlot(id) {
 }
 
 async function deletePlot(id) {
-  if (!await ssConfirm('Delete Story Thread', 'Delete this story thread?')) return;
-  updateProject(current => { current.plot = current.plot.filter(thread => thread.id !== id); });
+  const thread = getProject()?.plot.find(item => item.id === id);
+  if (!thread || !await ssConfirm('Delete Story Thread', `Delete “${thread.title}”?`)) return;
+  updateProject(current => { current.plot = current.plot.filter(item => item.id !== id); });
   render();
 }
 
 addButton.addEventListener('click', addPlot);
-list.addEventListener('click', event => { const button = event.target.closest('[data-open],[data-delete]'); if (!button) return; if (button.dataset.open) openPlot(button.dataset.open); if (button.dataset.delete) deletePlot(button.dataset.delete); });
+list.addEventListener('click', event => { const button = event.target.closest('[data-action]'); if (!button) return; if (button.dataset.action === 'open') openPlot(button.dataset.id); if (button.dataset.action === 'delete') deletePlot(button.dataset.id); });
 render();
