@@ -107,7 +107,7 @@ public class MainActivity extends Activity {
         });
         webView.loadUrl("https://appassets.androidplatform.net/assets/index.html");
 
-        File bundledModel = new File(getFilesDir(), "models/gemma-model.litertlm");
+        File bundledModel = new File(getFilesDir(), "models/gemma-model.gguf");
         if (bundledModel.exists()) {
             loadGemmaInBackground(bundledModel);
         }
@@ -123,7 +123,7 @@ public class MainActivity extends Activity {
         Uri uri = data.getData();
         File modelDir = new File(getFilesDir(), "models");
         if (!modelDir.exists()) modelDir.mkdirs();
-        File destination = new File(modelDir, "gemma-model.litertlm");
+        File destination = new File(modelDir, "gemma-model.gguf");
 
         new Thread(() -> {
             try {
