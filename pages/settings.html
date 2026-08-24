@@ -3,16 +3,13 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Settings • S•S Story AI</title><link rel="stylesheet" href="../assets/css/base.css"><link rel="stylesheet" href="../assets/css/list.css"></head>
 <body>
 <header class="topbar"><a class="brand" href="../index.html">S•S <span>Story AI</span></a><a class="back" href="../index.html">← Home</a><span>Settings</span></header>
-<main class="narrow">
-  <div class="section-head"><div><p class="eyebrow">PREFERENCES</p><h1>Settings</h1></div></div>
-  <section class="panel settings-panel">
-    <label>Story length<select id="story-length"><option value="short">Short</option><option value="medium">Medium</option><option value="long">Long</option><option value="very-long">Very long</option></select></label>
-    <label>Creativity<select id="creativity"><option value="controlled">Controlled</option><option value="balanced">Balanced</option><option value="creative">Creative</option></select></label>
-    <label>Writing mode<select id="writing-mode"><option value="story">Story</option><option value="roleplay">Roleplay</option><option value="outline">Outline</option></select></label>
-    <label class="setting-toggle"><input id="continuity" type="checkbox"> Continuity checks</label>
-    <p id="settings-status" class="muted">Changes are saved automatically.</p>
-  </section>
-</main>
+<main class="narrow"><div class="section-head"><div><p class="eyebrow">PREFERENCES</p><h1>Settings</h1></div></div>
+<section class="panel settings-panel">
+  <div class="setting-row"><span>Story length</span><button class="secondary" id="story-length">Very long</button></div>
+  <div class="setting-row"><span>Creativity</span><button class="secondary" id="creativity">Controlled</button></div>
+  <div class="setting-row"><span>Writing mode</span><button class="secondary" id="writing-mode">Story</button></div>
+  <label class="setting-toggle"><input id="continuity" type="checkbox"> Continuity checks</label>
+  <p id="settings-status" class="muted">Changes are saved automatically.</p>
+</section></main>
 <script type="module" src="../assets/js/settings.js"></script>
-</body>
-</html>
+</body></html>
