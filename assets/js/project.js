@@ -28,13 +28,15 @@ document.querySelector('[data-action="settings"]')?.addEventListener('click', ()
   const current = db.projects.find(item => item.id === project.id);
   if (!current) return;
   const next = prompt('Story length: short, normal, long, very-long', current.settings?.storyLength || 'very-long');
-  if (!next) return;
+  if (!next?.trim()) return;
   current.settings.storyLength = next.trim();
   touch(current);
   save(db);
 });
 
 for (const card of document.querySelectorAll('.feature-card')) {
+  const href = card.getAttribute('href');
+  if (href) card.setAttribute('href', `${href}?project=${encodeURIComponent(project.id)}`);
   card.addEventListener('click', () => card.classList.add('visited'));
 }
 
