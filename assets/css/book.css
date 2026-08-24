@@ -1,0 +1,9 @@
+.book-controls label { display: flex; align-items: center; gap: 8px; }
+.book-controls select, .book-controls input { width: auto; }
+.book { overflow-wrap: anywhere; }
+.book #book-content { min-height: 160mm; }
+@media print {
+  body { background: #fff; }
+  .topbar, .book-controls { display: none; }
+  .book { margin: 0; box-shadow: none; }
+}
