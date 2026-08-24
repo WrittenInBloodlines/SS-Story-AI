@@ -18,10 +18,17 @@ const warningBox = document.querySelector('#continuity-warnings');
 const chatList = document.querySelector('#chat-list');
 const newChatButton = document.querySelector('#new-chat');
 
-let activeChatId = new URLSearchParams(location.search).get('chat');
+const requestedChatId = new URLSearchParams(location.search).get('chat');
+let activeChatId = project.activeChatId || requestedChatId || null;
+let chat = null;
+
+function chatUrl(chatId) {
+  const params = new URLSearchParams({ project: projectId(), chat: chatId });
+  return `chat.html?${params.toString()}`;
+}
 
 function ensureChats() {
-  let selected;
+  let selectedId = requestedChatId || activeChatId;
 
   updateProject(current => {
     if (!Array.isArray(current.chats)) current.chats = [];
@@ -37,18 +44,19 @@ function ensureChats() {
       });
     }
 
-    selected = current.chats.find(chat => chat.id === activeChatId) || current.chats[0];
-    activeChatId = selected.id;
+    const selected = current.chats.find(item => item.id === selectedId) ||
+      current.chats.find(item => item.id === current.activeChatId) ||
+      [...current.chats].sort((a, b) => new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0))[0];
+
+    selectedId = selected.id;
+    current.activeChatId = selectedId;
+    selected.messages = Array.isArray(selected.messages) ? selected.messages : [];
   });
 
-  return selected;
-}
-
-let chat = ensureChats();
-
-function chatUrl(chatId) {
-  const params = new URLSearchParams({ project: projectId(), chat: chatId });
-  return `chat.html?${params.toString()}`;
+  activeChatId = selectedId;
+  const freshProject = getProject();
+  chat = freshProject?.chats?.find(item => item.id === activeChatId) || null;
+  return chat;
 }
 
 function renderWarnings(warnings = []) {
@@ -87,26 +95,40 @@ function renderChatList() {
   });
 
   chatList.innerHTML = chats.map(item => {
-    const preview = item.messages?.length
-      ? item.messages[item.messages.length - 1].text
-      : 'No messages yet';
+    const messages = Array.isArray(item.messages) ? item.messages : [];
+    const preview = messages.length ? messages[messages.length - 1].text : 'No messages yet';
 
     return `
-      <a class="chat-list-item ${item.id === activeChatId ? 'active' : ''}" href="${esc(chatUrl(item.id))}">
+      <a class="chat-list-item ${item.id === activeChatId ? 'active' : ''}" href="${esc(chatUrl(item.id))}" data-chat-id="${esc(item.id)}">
         <span class="chat-list-title">${esc(item.title || 'Untitled Chat')}</span>
-        <span class="chat-list-preview">${esc(preview.slice(0, 72))}</span>
+        <span class="chat-list-preview">${esc(String(preview || '').slice(0, 72))}</span>
       </a>
     `;
   }).join('');
+
+  chatList.querySelectorAll('[data-chat-id]').forEach(link => {
+    link.addEventListener('click', event => {
+      const targetId = link.dataset.chatId;
+      if (!targetId) return;
+      activeChatId = targetId;
+      updateProject(current => {
+        if (current.chats.some(item => item.id === targetId)) current.activeChatId = targetId;
+      });
+    });
+  });
 }
 
 function render() {
+  if (!chat) chat = ensureChats();
+  if (!chat) return;
+
   title.textContent = chat.title || 'Chat';
   heading.textContent = chat.title || 'Chat';
   status.textContent = 'Local draft';
   renderChatList();
 
-  if (!chat.messages?.length) {
+  const messages = Array.isArray(chat.messages) ? chat.messages : [];
+  if (!messages.length) {
     box.innerHTML = `
       <div class="empty">
         <h2>Your Story Chat</h2>
@@ -116,7 +138,7 @@ function render() {
     return;
   }
 
-  box.innerHTML = chat.messages.map(message => `
+  box.innerHTML = messages.map(message => `
     <article class="message ${message.role === 'user' ? 'message-user' : 'message-assistant'}">
       <div class="message-role">${message.role === 'user' ? 'You' : 'S•S Story AI'}</div>
       <div class="message-text">${esc(message.text).replace(/\n/g, '<br>')}</div>
@@ -150,16 +172,17 @@ function saveMessage(text, bypassContinuity = false) {
 
     currentChat.messages = Array.isArray(currentChat.messages) ? currentChat.messages : [];
     currentChat.messages.push(message);
-    currentChat.updatedAt = new Date().toISOString();
-    chat = currentChat;
+    currentChat.updatedAt = message.createdAt;
+    current.activeChatId = currentChat.id;
 
     if (currentChat.messages.length === 1 && currentChat.title === 'Main Chat') {
       const words = text.trim().split(/\s+/).slice(0, 6).join(' ');
       currentChat.title = words || 'Main Chat';
-      chat = currentChat;
     }
   });
 
+  const freshProject = getProject();
+  chat = freshProject?.chats?.find(item => item.id === activeChatId) || null;
   input.value = '';
   renderWarnings([]);
   render();
@@ -168,19 +191,23 @@ function saveMessage(text, bypassContinuity = false) {
 
 function createChat() {
   const now = new Date().toISOString();
-  const created = {
-    id: newId('chat'),
-    title: 'New Chat',
-    messages: [],
-    createdAt: now,
-    updatedAt: now
-  };
+  let createdId = null;
 
   updateProject(current => {
+    if (!Array.isArray(current.chats)) current.chats = [];
+    const created = {
+      id: newId('chat'),
+      title: 'New Chat',
+      messages: [],
+      createdAt: now,
+      updatedAt: now
+    };
+    createdId = created.id;
     current.chats.push(created);
+    current.activeChatId = created.id;
   });
 
-  location.href = chatUrl(created.id);
+  if (createdId) location.href = chatUrl(createdId);
 }
 
 newChatButton?.addEventListener('click', createChat);
@@ -197,4 +224,5 @@ input.addEventListener('keydown', event => {
   }
 });
 
+chat = ensureChats();
 render();
