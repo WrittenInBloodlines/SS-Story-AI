@@ -14,6 +14,8 @@ export function createAIChatComposer(pipeline) {
         name: attachment.name || null,
         url: attachment.url || null,
         mimeType: attachment.mimeType || null,
+        size: Number.isFinite(attachment.size) ? attachment.size : 0,
+        source: attachment.source || null,
         metadata: attachment.metadata || {}
       }));
   }
