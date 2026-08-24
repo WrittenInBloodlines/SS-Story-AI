@@ -1,4 +1,4 @@
-import { getProject, load, save, go, esc, touch } from './storage.js';
+import { getProject, go, esc } from './storage.js';
 
 const project = getProject();
 if (!project) {
@@ -9,10 +9,20 @@ if (!project) {
 const title = document.querySelector('#title');
 const description = document.querySelector('#description');
 const projectName = document.querySelector('#project-name');
+const stats = document.querySelector('#project-stats');
 
 title.textContent = project.name;
 description.textContent = project.description || 'No description yet.';
 if (projectName) projectName.textContent = project.name;
+if (stats) stats.innerHTML = [
+  ['Chapters', project.chapters?.length || 0],
+  ['Characters', project.characters?.length || 0],
+  ['World entries', project.world?.length || 0],
+  ['Relationships', project.relationships?.length || 0],
+  ['Events', project.events?.length || 0],
+  ['Memories', project.memories?.length || 0],
+  ['Plot threads', project.plot?.length || 0]
+].map(([label, count]) => `<div class="stat"><strong>${count}</strong><span>${label}</span></div>`).join('');
 
 const currentPage = location.pathname.split('/').pop();
 for (const link of document.querySelectorAll('[data-tab]')) {
@@ -22,22 +32,6 @@ for (const link of document.querySelectorAll('[data-tab]')) {
 }
 
 document.querySelector('[data-action="chat"]')?.addEventListener('click', () => go('chat.html'));
+document.querySelector('[data-action="settings"]')?.addEventListener('click', () => { location.href = `settings.html?project=${encodeURIComponent(project.id)}`; });
 
-document.querySelector('[data-action="settings"]')?.addEventListener('click', () => {
-  const db = load();
-  const current = db.projects.find(item => item.id === project.id);
-  if (!current) return;
-  const next = prompt('Story length: short, normal, long, very-long', current.settings?.storyLength || 'very-long');
-  if (!next?.trim()) return;
-  current.settings.storyLength = next.trim();
-  touch(current);
-  save(db);
-});
-
-for (const card of document.querySelectorAll('.feature-card')) {
-  const href = card.getAttribute('href');
-  if (href) card.setAttribute('href', `${href}?project=${encodeURIComponent(project.id)}`);
-  card.addEventListener('click', () => card.classList.add('visited'));
-}
-
-window.SSStoryProject = { project, esc };
+window.SSStoryProject = { project, esc }; 
