@@ -1,0 +1,10 @@
+.sidebar #chapter-list { display: grid; gap: 6px; margin-top: 16px; }
+.sidebar #chapter-list button, .chapter-item { width: 100%; text-align: left; background: transparent; color: var(--muted); border: 1px solid transparent; border-radius: 10px; padding: 10px 12px; }
+.sidebar #chapter-list button:hover, .chapter-item:hover { color: var(--text); background: var(--panel-hover); border-color: var(--border); }
+.editor { min-width: 0; }
+.editor .title-input:focus { box-shadow: none; }
+@media (max-width: 700px) {
+  .editor-shell { min-height: calc(100vh - 69px); }
+  .editor { min-height: 65vh; }
+  .editor textarea { min-height: 50vh; }
+}
