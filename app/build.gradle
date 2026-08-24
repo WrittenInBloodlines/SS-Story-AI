@@ -1,0 +1,50 @@
+plugins {
+    id 'com.android.application'
+}
+
+android {
+    namespace 'com.ssstoryai.app'
+    compileSdk 35
+
+    defaultConfig {
+        applicationId 'com.ssstoryai.app'
+        minSdk 23
+        targetSdk 35
+        versionCode 1
+        versionName '0.1.0'
+    }
+
+    buildTypes {
+        debug {
+            applicationIdSuffix '.debug'
+            versionNameSuffix '-debug'
+        }
+        release {
+            minifyEnabled false
+        }
+    }
+}
+
+configurations.all {
+    resolutionStrategy {
+        force 'androidx.webkit:webkit:1.12.1'
+    }
+}
+
+dependencies {
+    implementation 'androidx.webkit:webkit:1.12.1'
+}
+
+// The Android app is a wrapper around the existing S•S Story AI web UI.
+// The web files are copied at build time, so there is only one source of truth.
+tasks.register('syncWebAssets', Sync) {
+    into(layout.projectDirectory.dir('src/main/assets'))
+    from(rootProject.projectDir) {
+        include '**/*'
+        exclude '.git/**', '.github/**', '.gradle/**', 'app/**', 'build/**', 'tools/**'
+        exclude 'build.gradle', 'settings.gradle', 'gradle.properties'
+        exclude 'README.md'
+    }
+}
+
+preBuild.dependsOn(tasks.named('syncWebAssets'))
