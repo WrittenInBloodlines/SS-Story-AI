@@ -14,19 +14,43 @@
     <a class="back" href="project.html">Project</a>
   </header>
 
-  <main class="chat-shell">
-    <section id="continuity-warnings" class="continuity-panel" hidden></section>
-    <div id="messages" class="messages">
-      <div class="empty">
-        <h2>Your Story Chat</h2>
-        <p>No language model is connected yet. The foundation can already store your messages.</p>
+  <main class="chat-app">
+    <aside class="chat-sidebar" aria-label="Chats">
+      <div class="sidebar-header">
+        <div>
+          <span class="eyebrow">Project chats</span>
+          <h1>Conversations</h1>
+        </div>
+        <button id="new-chat" class="icon-button" type="button" aria-label="Create a new chat">+</button>
       </div>
-    </div>
+      <div id="chat-list" class="chat-list"></div>
+    </aside>
 
-    <form id="chat-form" class="composer">
-      <textarea id="message" rows="2" placeholder="Write something..."></textarea>
-      <button class="primary" type="submit">Send</button>
-    </form>
+    <section class="chat-main">
+      <div class="chat-main-header">
+        <div>
+          <span class="eyebrow">Story workspace</span>
+          <strong id="chat-heading">Main Chat</strong>
+        </div>
+        <span id="chat-status" class="chat-status">Local draft</span>
+      </div>
+
+      <div id="continuity-warnings" class="continuity-panel" hidden></div>
+      <div id="messages" class="messages">
+        <div class="empty">
+          <h2>Your Story Chat</h2>
+          <p>Start writing. Messages are stored locally in this project.</p>
+        </div>
+      </div>
+
+      <form id="chat-form" class="composer">
+        <textarea id="message" rows="2" placeholder="Write something..."></textarea>
+        <div class="composer-footer">
+          <span>Local chat storage is active</span>
+          <button class="primary" type="submit">Send</button>
+        </div>
+      </form>
+    </section>
   </main>
 
   <script type="module" src="../assets/js/chat.js"></script>
