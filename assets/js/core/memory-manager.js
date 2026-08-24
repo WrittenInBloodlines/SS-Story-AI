@@ -1,59 +1,76 @@
 import { newId, updateProject } from '../storage.js';
-import { approveMemoryCandidate, rejectMemoryCandidate } from './memory-candidates.js';
+import { createMemoryPolicy, canModifyMemory } from './memory-policy.js';
 
-export function addMemory(project, { title, content, category = 'general', source = 'user' }) {
-  if (!project || !title?.trim() || !content?.trim()) return null;
+export function createMemory(data = {}) {
+  if (!data.content?.trim()) return null;
 
   const memory = {
     id: newId('memory'),
-    title: title.trim(),
-    content: content.trim(),
-    category,
-    source,
-    locked: true,
+    type: data.type || 'custom',
+    title: data.title?.trim() || 'Untitled Memory',
+    content: data.content.trim(),
+    tags: Array.isArray(data.tags) ? data.tags : [],
+    priority: data.priority || 'normal',
+    memoryPolicy: createMemoryPolicy(data.memoryPolicy),
+    source: data.source || null,
+    version: 1,
     createdAt: new Date().toISOString(),
     updatedAt: new Date().toISOString()
   };
 
-  updateProject(currentProject => {
-    currentProject.memory.push(memory);
+  updateProject(project => {
+    project.memories.push(memory);
   });
 
   return memory;
 }
 
-export function approveCandidateIntoMemory(candidate, options = {}) {
-  const approved = approveMemoryCandidate(candidate);
-  if (!approved) return null;
-
-  return addMemory(options.project, {
-    title: options.title || 'Imported Memory',
-    content: approved.content,
-    category: options.category || 'general',
-    source: 'approved-candidate'
-  });
-}
-
-export function rejectCandidate(candidate) {
-  return rejectMemoryCandidate(candidate);
+export function addMemory(project, data = {}) {
+  return createMemory({ ...data, project });
 }
 
 export function getMemory(project, memoryId) {
-  return project?.memory?.find(item => item.id === memoryId) || null;
+  return project?.memories?.find(memory => memory.id === memoryId) || null;
 }
 
-export function updateMemory(memoryId, changes = {}) {
+export function getMemories(project, filters = {}) {
+  if (!project) return [];
+
+  return (project.memories || []).filter(memory => {
+    if (filters.type && memory.type !== filters.type) return false;
+    if (filters.priority && memory.priority !== filters.priority) return false;
+    if (filters.tag && !memory.tags.includes(filters.tag)) return false;
+    return true;
+  });
+}
+
+export function updateMemory(memoryId, changes = {}, actor = 'user') {
   let updated = null;
 
   updateProject(project => {
-    const memory = project.memory.find(item => item.id === memoryId);
-    if (!memory || memory.locked) return;
+    const memory = getMemory(project, memoryId);
+    if (!memory || !canModifyMemory(memory, actor, 'update')) return;
 
     Object.assign(memory, changes, {
       updatedAt: new Date().toISOString()
     });
+
     updated = memory;
   });
 
   return updated;
+}
+
+export function deleteMemory(memoryId, actor = 'user') {
+  let deleted = false;
+
+  updateProject(project => {
+    const memory = getMemory(project, memoryId);
+    if (!memory || !canModifyMemory(memory, actor, 'delete')) return;
+
+    project.memories = project.memories.filter(item => item.id !== memoryId);
+    deleted = true;
+  });
+
+  return deleted;
 }
