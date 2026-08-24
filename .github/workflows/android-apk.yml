@@ -19,6 +19,14 @@ jobs:
       - name: Fetch llama.cpp GGUF runtime
         run: git clone --depth 1 https://github.com/ggml-org/llama.cpp.git third_party/llama.cpp
 
+      - name: Enable llama.cpp common library
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f third_party/llama.cpp/CMakeLists.txt
+          printf '%s\n' 'set(LLAMA_BUILD_COMMON ON CACHE BOOL "Build llama.cpp common library" FORCE)' | cat - third_party/llama.cpp/CMakeLists.txt > /tmp/llama-CMakeLists.txt
+          mv /tmp/llama-CMakeLists.txt third_party/llama.cpp/CMakeLists.txt
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
