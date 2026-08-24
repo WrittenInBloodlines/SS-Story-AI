@@ -1,0 +1,99 @@
+.chat-shell {
+  width: min(100%, 1000px);
+  margin: 0 auto;
+  padding: 24px;
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 16px;
+  min-height: calc(100vh - 72px);
+  box-sizing: border-box;
+}
+
+.messages {
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 8px 0;
+}
+
+.message {
+  max-width: 82%;
+  padding: 14px 16px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+}
+
+.message-user {
+  align-self: flex-end;
+}
+
+.message-assistant {
+  align-self: flex-start;
+}
+
+.message-role {
+  font-size: 12px;
+  opacity: .65;
+  margin-bottom: 6px;
+}
+
+.message-text {
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.composer {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 10px;
+  align-items: end;
+}
+
+.composer textarea {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 52px;
+}
+
+.continuity-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  background: var(--panel);
+}
+
+.continuity-warning-title {
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.continuity-warning {
+  padding: 8px 0;
+  line-height: 1.4;
+}
+
+.continuity-warning-actions {
+  margin-top: 10px;
+}
+
+.continuity-warning-actions button {
+  padding: 8px 12px;
+}
+
+@media (max-width: 700px) {
+  .chat-shell {
+    padding: 14px;
+  }
+
+  .message {
+    max-width: 92%;
+  }
+
+  .composer {
+    grid-template-columns: 1fr;
+  }
+}
