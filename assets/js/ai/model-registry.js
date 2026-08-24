@@ -9,7 +9,10 @@ export function createModelRegistry() {
   adapters.set(fallback.id, fallback);
 
   const local = createLocalModelAdapter();
-  if (local) adapters.set(local.id, local);
+  if (local) {
+    adapters.set(local.id, local);
+    activeId = local.id;
+  }
 
   return {
     register(adapter) {
