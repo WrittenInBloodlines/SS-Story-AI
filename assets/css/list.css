@@ -1,0 +1,9 @@
+.section-head { align-items: end; }
+.section-head > div { min-width: 0; }
+.card-list .card { align-items: flex-start; }
+.card-list .card button { flex: 0 0 auto; }
+.card-list .card p { margin: 6px 0 0; color: var(--muted); }
+@media (max-width: 700px) {
+  .section-head { align-items: flex-start; flex-direction: column; }
+  .card { flex-direction: column; }
+}
