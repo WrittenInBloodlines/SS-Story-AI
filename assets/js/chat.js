@@ -22,6 +22,7 @@ const requestedChatId = new URLSearchParams(location.search).get('chat');
 let activeChatId = project.activeChatId || requestedChatId || null;
 let chat = null;
 let gemmaGenerating = false;
+let gemmaThinkingTimer = null;
 
 function chatUrl(chatId) {
   const params = new URLSearchParams({ project: projectId(), chat: chatId });
@@ -149,6 +150,27 @@ function render() {
   box.scrollTop = box.scrollHeight;
 }
 
+function startGemmaThinkingIndicator() {
+  stopGemmaThinkingIndicator();
+
+  const dots = ['', '.', '..', '...'];
+  let index = 0;
+  status.textContent = 'Gemma • generating';
+
+  gemmaThinkingTimer = window.setInterval(() => {
+    if (!gemmaGenerating) return;
+    index = (index + 1) % dots.length;
+    status.textContent = `Gemma • generating${dots[index]}`;
+  }, 450);
+}
+
+function stopGemmaThinkingIndicator() {
+  if (gemmaThinkingTimer !== null) {
+    window.clearInterval(gemmaThinkingTimer);
+    gemmaThinkingTimer = null;
+  }
+}
+
 function saveMessage(text, bypassContinuity = false) {
   if (!text || gemmaGenerating) return;
 
@@ -192,7 +214,7 @@ function saveMessage(text, bypassContinuity = false) {
 }
 
 function generateWithGemma() {
-  if (!window.AndroidBridge || typeof window.AndroidBridge.generateGemma !== 'function') return;
+  if (!window.AndroidBridge || typeof window.AndroidBridge.generateGemmaAsync !== 'function') return;
   if (typeof window.AndroidBridge.gemmaStatus !== 'function') return;
 
   let statusInfo;
@@ -202,7 +224,10 @@ function generateWithGemma() {
     return;
   }
 
-  if (!statusInfo.loaded) return;
+  if (!statusInfo.loaded) {
+    status.textContent = 'Gemma is not loaded.';
+    return;
+  }
 
   const currentProject = getProject();
   const currentChat = currentProject?.chats?.find(item => item.id === activeChatId);
@@ -213,24 +238,46 @@ function generateWithGemma() {
     content: message.text || ''
   }));
 
+  const requestId = `gemma-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const payload = JSON.stringify({
+    system: 'You are S•S Story AI, a writing partner. Follow the user\'s instructions closely. Do not invent major plot events unless the user asks for them. When the user asks for story text, write the story directly without a preface.',
+    messages
+  });
+
   gemmaGenerating = true;
-  status.textContent = 'Gemma • generating…';
   input.disabled = true;
+  startGemmaThinkingIndicator();
 
-  window.setTimeout(() => {
-    try {
-      const raw = window.AndroidBridge.generateGemma(JSON.stringify({
-        system: 'You are S•S Story AI, a writing partner. Follow the user\'s instructions closely. Do not invent major plot events unless the user asks for them. When the user asks for story text, write the story directly without a preface.',
-        messages
-      }));
-      const result = JSON.parse(raw || '{}');
+  let settled = false;
+  let timeout = null;
 
-      if (!result.ok) {
-        status.textContent = result.message || 'Gemma could not generate a response.';
+  const cleanup = () => {
+    window.removeEventListener('ss-gemma-generation', handleResult);
+    if (timeout !== null) window.clearTimeout(timeout);
+    stopGemmaThinkingIndicator();
+  };
+
+  const finish = (callback) => {
+    if (settled) return;
+    settled = true;
+    cleanup();
+    callback();
+    gemmaGenerating = false;
+    input.disabled = false;
+    input.focus();
+  };
+
+  const handleResult = event => {
+    const data = event?.detail;
+    if (!data || data.requestId !== requestId) return;
+
+    finish(() => {
+      if (!data.ok) {
+        status.textContent = data.message || 'Gemma could not generate a response.';
         return;
       }
 
-      const text = String(result.text || '').trim();
+      const text = String(data.text || '').trim();
       if (!text) {
         status.textContent = 'Gemma returned an empty response.';
         return;
@@ -254,14 +301,24 @@ function generateWithGemma() {
       chat = getProject()?.chats?.find(item => item.id === activeChatId) || chat;
       status.textContent = 'Gemma • local response';
       render();
-    } catch (error) {
-      status.textContent = `Gemma error: ${error.message || error}`;
-    } finally {
-      gemmaGenerating = false;
-      input.disabled = false;
-      input.focus();
-    }
-  }, 0);
+    });
+  };
+
+  window.addEventListener('ss-gemma-generation', handleResult);
+
+  timeout = window.setTimeout(() => {
+    finish(() => {
+      status.textContent = 'Gemma took too long to respond.';
+    });
+  }, 180000);
+
+  try {
+    window.AndroidBridge.generateGemmaAsync(requestId, payload);
+  } catch (error) {
+    finish(() => {
+      status.textContent = `Gemma error: ${error?.message || error}`;
+    });
+  }
 }
 
 function createChat() {
