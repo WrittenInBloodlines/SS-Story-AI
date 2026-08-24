@@ -1,4 +1,4 @@
-import { getProject, updateProject, newId, esc } from './storage.js';
+import { getProject, updateProject, newId, esc, projectId } from './storage.js';
 import { checkContinuity } from './ai/continuity.js';
 
 const project = getProject();
@@ -12,20 +12,43 @@ const form = document.querySelector('#chat-form');
 const input = document.querySelector('#message');
 const box = document.querySelector('#messages');
 const title = document.querySelector('#chat-title');
+const heading = document.querySelector('#chat-heading');
+const status = document.querySelector('#chat-status');
 const warningBox = document.querySelector('#continuity-warnings');
+const chatList = document.querySelector('#chat-list');
+const newChatButton = document.querySelector('#new-chat');
 
-let chat = project.chats[0] || {
-  id: newId('chat'),
-  title: 'Main Chat',
-  messages: [],
-  createdAt: new Date().toISOString(),
-  updatedAt: new Date().toISOString()
-};
+let activeChatId = new URLSearchParams(location.search).get('chat');
 
-if (!project.chats.some(item => item.id === chat.id)) {
+function ensureChats() {
+  let selected;
+
   updateProject(current => {
-    current.chats.push(chat);
+    if (!Array.isArray(current.chats)) current.chats = [];
+
+    if (!current.chats.length) {
+      const now = new Date().toISOString();
+      current.chats.push({
+        id: newId('chat'),
+        title: 'Main Chat',
+        messages: [],
+        createdAt: now,
+        updatedAt: now
+      });
+    }
+
+    selected = current.chats.find(chat => chat.id === activeChatId) || current.chats[0];
+    activeChatId = selected.id;
   });
+
+  return selected;
+}
+
+let chat = ensureChats();
+
+function chatUrl(chatId) {
+  const params = new URLSearchParams({ project: projectId(), chat: chatId });
+  return `chat.html?${params.toString()}`;
 }
 
 function renderWarnings(warnings = []) {
@@ -53,18 +76,41 @@ function renderWarnings(warnings = []) {
   document.querySelector('#continue-anyway')?.addEventListener('click', () => {
     warningBox.hidden = true;
     warningBox.innerHTML = '';
-    saveMessage(input.value.trim());
+    saveMessage(input.value.trim(), true);
   });
+}
+
+function renderChatList() {
+  const current = getProject();
+  const chats = [...(current?.chats || [])].sort((a, b) => {
+    return new Date(b.updatedAt || 0) - new Date(a.updatedAt || 0);
+  });
+
+  chatList.innerHTML = chats.map(item => {
+    const preview = item.messages?.length
+      ? item.messages[item.messages.length - 1].text
+      : 'No messages yet';
+
+    return `
+      <a class="chat-list-item ${item.id === activeChatId ? 'active' : ''}" href="${esc(chatUrl(item.id))}">
+        <span class="chat-list-title">${esc(item.title || 'Untitled Chat')}</span>
+        <span class="chat-list-preview">${esc(preview.slice(0, 72))}</span>
+      </a>
+    `;
+  }).join('');
 }
 
 function render() {
   title.textContent = chat.title || 'Chat';
+  heading.textContent = chat.title || 'Chat';
+  status.textContent = 'Local draft';
+  renderChatList();
 
-  if (!chat.messages.length) {
+  if (!chat.messages?.length) {
     box.innerHTML = `
       <div class="empty">
         <h2>Your Story Chat</h2>
-        <p>The chat is ready. A language model can be connected later without changing the stored conversation.</p>
+        <p>Start writing. Messages are stored locally in this project.</p>
       </div>
     `;
     return;
@@ -80,8 +126,16 @@ function render() {
   box.scrollTop = box.scrollHeight;
 }
 
-function saveMessage(text) {
+function saveMessage(text, bypassContinuity = false) {
   if (!text) return;
+
+  if (!bypassContinuity) {
+    const warnings = checkContinuity(text, getProject());
+    if (warnings.length) {
+      renderWarnings(warnings);
+      return;
+    }
+  }
 
   const message = {
     id: newId('message'),
@@ -91,17 +145,19 @@ function saveMessage(text) {
   };
 
   updateProject(current => {
-    const currentChat = current.chats.find(item => item.id === chat.id);
+    const currentChat = current.chats.find(item => item.id === activeChatId);
+    if (!currentChat) return;
 
-    if (!currentChat) {
-      current.chats.push({ ...chat, messages: [message] });
-      chat = current.chats[current.chats.length - 1];
-      return;
-    }
-
+    currentChat.messages = Array.isArray(currentChat.messages) ? currentChat.messages : [];
     currentChat.messages.push(message);
     currentChat.updatedAt = new Date().toISOString();
     chat = currentChat;
+
+    if (currentChat.messages.length === 1 && currentChat.title === 'Main Chat') {
+      const words = text.trim().split(/\s+/).slice(0, 6).join(' ');
+      currentChat.title = words || 'Main Chat';
+      chat = currentChat;
+    }
   });
 
   input.value = '';
@@ -110,19 +166,35 @@ function saveMessage(text) {
   input.focus();
 }
 
+function createChat() {
+  const now = new Date().toISOString();
+  const created = {
+    id: newId('chat'),
+    title: 'New Chat',
+    messages: [],
+    createdAt: now,
+    updatedAt: now
+  };
+
+  updateProject(current => {
+    current.chats.push(created);
+  });
+
+  location.href = chatUrl(created.id);
+}
+
+newChatButton?.addEventListener('click', createChat);
+
 form.addEventListener('submit', event => {
   event.preventDefault();
+  saveMessage(input.value.trim());
+});
 
-  const text = input.value.trim();
-  if (!text) return;
-
-  const warnings = checkContinuity(text, getProject());
-  if (warnings.length) {
-    renderWarnings(warnings);
-    return;
+input.addEventListener('keydown', event => {
+  if (event.key === 'Enter' && !event.shiftKey) {
+    event.preventDefault();
+    form.requestSubmit();
   }
-
-  saveMessage(text);
 });
 
 render();
