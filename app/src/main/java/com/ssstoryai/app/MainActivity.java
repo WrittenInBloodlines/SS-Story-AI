@@ -24,11 +24,17 @@ public class MainActivity extends Activity {
                 PrintManager printManager = (PrintManager) getSystemService(Context.PRINT_SERVICE);
                 if (printManager == null || webView == null) return;
 
-                PrintAttributes.MediaSize mediaSize = PrintAttributes.MediaSize.ISO_A5;
-                if ("a4".equalsIgnoreCase(format)) {
-                    mediaSize = PrintAttributes.MediaSize.ISO_A4;
-                } else if ("letter".equalsIgnoreCase(format)) {
-                    mediaSize = PrintAttributes.MediaSize.NA_LETTER;
+                PrintAttributes.MediaSize mediaSize;
+                switch (format == null ? "a5" : format.toLowerCase()) {
+                    case "a3": mediaSize = PrintAttributes.MediaSize.ISO_A3; break;
+                    case "a4": mediaSize = PrintAttributes.MediaSize.ISO_A4; break;
+                    case "a5": mediaSize = PrintAttributes.MediaSize.ISO_A5; break;
+                    case "a6": mediaSize = PrintAttributes.MediaSize.ISO_A6; break;
+                    case "a7": mediaSize = PrintAttributes.MediaSize.ISO_A7; break;
+                    case "b4": mediaSize = PrintAttributes.MediaSize.ISO_B4; break;
+                    case "b5": mediaSize = PrintAttributes.MediaSize.ISO_B5; break;
+                    case "legal": mediaSize = PrintAttributes.MediaSize.NA_LEGAL; break;
+                    case "letter": default: mediaSize = PrintAttributes.MediaSize.NA_LETTER; break;
                 }
 
                 String jobName = "S•S Story AI Book";
