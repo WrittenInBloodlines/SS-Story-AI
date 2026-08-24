@@ -16,11 +16,19 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      - name: Fetch llama.cpp GGUF runtime
+        run: git clone --depth 1 https://github.com/ggml-org/llama.cpp.git third_party/llama.cpp
+
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
+
+      - name: Install Android native build tools
+        run: |
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;29.0.13113456" "cmake;3.31.6"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
