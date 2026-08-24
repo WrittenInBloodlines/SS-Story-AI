@@ -1,7 +1,7 @@
-import { createAIChatUIBridge } from './ai-chat-ui-bridge.js';
+import { createAIChatGateway } from './ai-chat-gateway.js';
 
 export function createAIChatMessagePipeline(project, providerId, callbacks = {}) {
-  const bridge = createAIChatUIBridge(null, callbacks);
+  const gateway = createAIChatGateway(project, providerId, callbacks);
 
   return {
     async send(chatId, content, options = {}) {
@@ -10,11 +10,19 @@ export function createAIChatMessagePipeline(project, providerId, callbacks = {})
         throw new Error('Message content cannot be empty.');
       }
 
-      return bridge.send(chatId, content, {
-        ...options,
-        project,
-        providerId
-      });
+      return gateway.send(chatId, content, options);
+    },
+
+    open(chatId, options = {}) {
+      return gateway.getSession(chatId, options.callbacks || {});
+    },
+
+    close(chatId) {
+      return gateway.stop(chatId);
+    },
+
+    destroy(chatId) {
+      return gateway.destroy(chatId);
     }
   };
 }
