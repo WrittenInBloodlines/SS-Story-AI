@@ -1,4 +1,5 @@
 import { createUnavailableModelAdapter } from './model.js';
+import { createLocalModelAdapter } from './local-model-adapter.js';
 
 export function createModelRegistry() {
   const adapters = new Map();
@@ -7,13 +8,16 @@ export function createModelRegistry() {
   const fallback = createUnavailableModelAdapter();
   adapters.set(fallback.id, fallback);
 
+  const local = createLocalModelAdapter();
+  if (local) adapters.set(local.id, local);
+
   return {
     register(adapter) {
       if (!adapter?.id || typeof adapter.generate !== 'function') {
         throw new Error('Invalid model adapter.');
       }
       adapters.set(adapter.id, adapter);
-      if (!activeId) activeId = adapter.id;
+      if (!activeId || activeId === fallback.id) activeId = adapter.id;
       return adapter;
     },
 
