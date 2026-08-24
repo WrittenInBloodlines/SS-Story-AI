@@ -3,7 +3,14 @@
 .card-list .card { align-items: flex-start; }
 .card-list .card button { flex: 0 0 auto; }
 .card-list .card p { margin: 6px 0 0; color: var(--muted); }
+.card-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.card-actions button { min-height: 36px; padding: 8px 12px; border: 1px solid var(--border); border-radius: 10px; font: inherit; font-weight: 700; cursor: pointer; transition: background .16s ease, border-color .16s ease, transform .16s ease; }
+.card-actions button:hover { transform: translateY(-1px); }
+.card-actions .secondary { background: #17131b; color: var(--text); border-color: #3b3242; }
+.card-actions .danger { background: #21151b; color: #e8c6cf; border-color: #53333f; }
+.card-actions small { color: var(--muted); font-weight: 700; padding: 0 4px; }
 @media (max-width: 700px) {
   .section-head { align-items: flex-start; flex-direction: column; }
   .card { flex-direction: column; }
+  .card-actions { width: 100%; justify-content: flex-start; }
 }
