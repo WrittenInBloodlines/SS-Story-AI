@@ -7,7 +7,7 @@ from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-IGNORED_DIRS = {'.git', '.gradle', 'build', 'app/build'}
+IGNORED_DIRS = {'.git', '.gradle', 'build', 'app/build', 'third_party/llama.cpp'}
 SOURCE_SUFFIXES = {'.html', '.js', '.css', '.json'}
 
 
