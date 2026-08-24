@@ -3,6 +3,6 @@
 <head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Book • S•S Story AI</title><link rel="stylesheet" href="../assets/css/base.css"><link rel="stylesheet" href="../assets/css/book.css"></head>
 <body>
 <header class="topbar"><a class="brand" href="../index.html">S•S <span>Story AI</span></a><a class="back" href="project.html">← Project</a><span>Print View</span></header>
-<main class="book-controls"><label>Format<select id="format"><option value="a5">A5</option><option value="a4">A4</option><option value="letter">Letter</option></select></label><label>Font Size<input id="font-size" type="range" min="12" max="24" value="16"></label><button id="print" class="primary">Print</button></main>
-<main id="book" class="book"><div id="book-content"><h1>Your Book</h1><p class="muted">Chapters will appear here automatically once they are created in the Story section.</p></div></main>
+<main class="book-controls"><div class="format-control"><span class="control-label">Format</span><button type="button" class="format-trigger" id="format-trigger">A5</button></div><label>Font Size<input id="font-size" type="range" min="12" max="24" value="16"></label><button id="print" class="primary">Print</button></main>
+<main id="book" class="book" data-format="a5"><div id="book-content"><h1>Your Book</h1><p class="muted">Chapters will appear here automatically once they are created in the Story section.</p></div></main>
 <script type="module" src="../assets/js/book.js"></script></body></html>
