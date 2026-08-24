@@ -1,7 +1,7 @@
 import { createModelAdapter, AIModelError } from './model.js';
 
 export function createLocalModelAdapter() {
-  if (!window.AndroidBridge || typeof window.AndroidBridge.generateGemma !== 'function') {
+  if (!window.AndroidBridge || typeof window.AndroidBridge.generateGemmaAsync !== 'function') {
     return null;
   }
 
@@ -16,23 +16,62 @@ export function createLocalModelAdapter() {
         maxTokens: request.settings?.maxTokens ?? 2000
       });
 
-      const result = window.AndroidBridge.generateGemma(payload);
-      if (!result) {
-        throw new AIModelError('Gemma is not loaded on this device yet.', 'LOCAL_MODEL_NOT_LOADED');
-      }
+      const requestId = `gemma-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-      let data;
-      try {
-        data = JSON.parse(result);
-      } catch {
-        throw new AIModelError('The local model returned an invalid response.', 'LOCAL_MODEL_INVALID_RESPONSE');
-      }
+      return await new Promise((resolve, reject) => {
+        let settled = false;
 
-      if (!data.ok) {
-        throw new AIModelError(data.message || 'Gemma could not generate a response.', data.code || 'LOCAL_MODEL_FAILED');
-      }
+        const cleanup = () => {
+          window.removeEventListener('ss-gemma-generation', handleResult);
+          clearTimeout(timeout);
+        };
 
-      return data.text || '';
+        const finish = (callback) => {
+          if (settled) return;
+          settled = true;
+          cleanup();
+          callback();
+        };
+
+        const handleResult = (event) => {
+          const data = event?.detail;
+          if (!data || data.requestId !== requestId) return;
+
+          finish(() => {
+            if (!data.ok) {
+              reject(new AIModelError(
+                data.message || 'Gemma could not generate a response.',
+                data.code || 'LOCAL_MODEL_FAILED'
+              ));
+              return;
+            }
+
+            resolve(data.text || '');
+          });
+        };
+
+        const timeout = setTimeout(() => {
+          finish(() => {
+            reject(new AIModelError(
+              'Gemma took too long to generate a response.',
+              'LOCAL_MODEL_TIMEOUT'
+            ));
+          });
+        }, 180000);
+
+        window.addEventListener('ss-gemma-generation', handleResult);
+
+        try {
+          window.AndroidBridge.generateGemmaAsync(requestId, payload);
+        } catch (error) {
+          finish(() => {
+            reject(new AIModelError(
+              error?.message || 'Could not start local Gemma generation.',
+              'LOCAL_MODEL_START_FAILED'
+            ));
+          });
+        }
+      });
     }
   });
 }
