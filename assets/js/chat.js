@@ -267,7 +267,8 @@ function generateWithGemma() {
   // engine requires its system prompt to be configured immediately after the
   // GGUF model is loaded, so generation must not attempt to replace it later.
   const payload = JSON.stringify({
-    messages
+    messages,
+    maxTokens: 8
   });
 
   gemmaGenerating = true;
