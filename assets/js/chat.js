@@ -155,6 +155,9 @@ function startGemmaThinkingIndicator() {
   stopGemmaThinkingIndicator();
   removeGemmaTypingBubble();
 
+  // Gemma gets a real assistant bubble on the left. The dots are only shown
+  // while native inference is actually running and disappear once a response
+  // or an error arrives.
   const bubble = document.createElement('article');
   bubble.className = 'message message-assistant message-gemma-typing';
   bubble.setAttribute('aria-label', 'Gemma is generating a response');
@@ -259,13 +262,17 @@ function generateWithGemma() {
   }));
 
   const requestId = `gemma-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+
+  // Keep this identical to the native runtime prompt. The native inference
+  // engine requires its system prompt to be configured immediately after the
+  // GGUF model is loaded, so generation must not attempt to replace it later.
   const payload = JSON.stringify({
-    system: 'You are S•S Story AI, a writing partner. Follow the user\'s instructions closely. Do not invent major plot events unless the user asks for them. When the user asks for story text, write the story directly without a preface.',
     messages
   });
 
   gemmaGenerating = true;
   input.disabled = true;
+  status.textContent = 'Gemma • Generating…';
   startGemmaThinkingIndicator();
 
   let settled = false;
