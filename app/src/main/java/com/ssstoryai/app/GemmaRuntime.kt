@@ -43,8 +43,7 @@ class GemmaRuntime(context: Context) {
                     // IMPORTANT: this must happen directly after loadModel().
                     engine.setSystemPrompt(systemPrompt)
 
-                    // Wait until the native system prompt processing is finished
-                    // before allowing the first user prompt to run.
+                    // Wait until native system-prompt processing is complete.
                     engine.state.first { it is InferenceEngine.State.ModelReady }
                 }
             }
@@ -90,13 +89,14 @@ class GemmaRuntime(context: Context) {
                     .toString()
             }
 
-            // Keep the first local milestone deliberately small. Once native
-            // generation is proven reliable, the UI can raise this limit for
-            // longer story generations.
-            val predictLength = request.optInt("maxTokens", 256).coerceIn(1, 512)
+            // Gemma 3 1B on a phone can be quite slow, especially during the
+            // first native generation. Keep the default short so a simple test
+            // such as "Hallo Gemma, wer bist du?" actually finishes quickly.
+            // The UI can request more tokens later for longer story generation.
+            val predictLength = request.optInt("maxTokens", 96).coerceIn(1, 256)
 
             val output = runBlocking(Dispatchers.IO) {
-                withTimeout(180_000L) {
+                withTimeout(120_000L) {
                     engine.state.first { it is InferenceEngine.State.ModelReady }
 
                     val result = StringBuilder()
