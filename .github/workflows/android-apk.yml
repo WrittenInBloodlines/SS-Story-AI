@@ -19,6 +19,38 @@ jobs:
       - name: Fetch llama.cpp GGUF runtime
         run: git clone --depth 1 https://github.com/ggml-org/llama.cpp.git third_party/llama.cpp
 
+      - name: Patch llama.cpp Android runtime for Gemma 3
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path('third_party/llama.cpp/examples/llama.android/lib/src/main/cpp/ai_chat.cpp')
+          text = path.read_text()
+
+          replacements = {
+              'constexpr int   N_THREADS_MAX           = 4;':
+                  'constexpr int   N_THREADS_MAX           = 8;',
+              'constexpr int   N_THREADS_HEADROOM      = 2;':
+                  'constexpr int   N_THREADS_HEADROOM      = 1;',
+              'constexpr int   DEFAULT_CONTEXT_SIZE    = 8192;':
+                  'constexpr int   DEFAULT_CONTEXT_SIZE    = 4096;',
+              '/* use_jinja */ false':
+                  '/* use_jinja */ true',
+              'stop_generation_position = current_position + user_prompt_size + n_predict;':
+                  'stop_generation_position = current_position + n_predict;',
+          }
+
+          for old, new in replacements.items():
+              if old not in text:
+                  raise SystemExit(f'Missing expected llama.cpp source text: {old}')
+              text = text.replace(old, new)
+
+          path.write_text(text)
+          print('Patched llama.cpp Android runtime for Gemma 3.')
+          PY
+
       - name: Enable llama.cpp common library
         shell: bash
         run: |
