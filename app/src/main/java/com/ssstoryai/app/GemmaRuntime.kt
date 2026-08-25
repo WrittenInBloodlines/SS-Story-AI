@@ -19,7 +19,11 @@ import java.io.File
 class GemmaRuntime(context: Context) {
     private val engine: InferenceEngine = AiChat.getInferenceEngine(context)
     private var loadedPath: String? = null
-    private var systemPrompt = "You are S•S Story AI, a helpful writing assistant. Follow the user's story instructions faithfully, do not invent major plot events unless requested, and write directly when the user asks for story text."
+
+    // llama.cpp requires the system prompt to be set immediately after the
+    // model is loaded. Keep the native prompt here and do not call
+    // setSystemPrompt() later during generation.
+    private val systemPrompt = "You are S•S Story AI, a writing partner. Follow the user's instructions closely. Do not invent major plot events unless the user asks for them. When the user asks for story text, write the story directly without a preface."
 
     @Synchronized
     fun loadModel(modelPath: String): String {
@@ -35,10 +39,12 @@ class GemmaRuntime(context: Context) {
                 withTimeout(60_000L) {
                     engine.state.first { it is InferenceEngine.State.Initialized }
                     engine.loadModel(file.absolutePath)
+
+                    // IMPORTANT: this must happen directly after loadModel().
                     engine.setSystemPrompt(systemPrompt)
-                    // setSystemPrompt() starts native processing asynchronously.
-                    // Do not send the first user prompt until that processing has
-                    // completed and the engine has returned to ModelReady.
+
+                    // Wait until the native system prompt processing is finished
+                    // before allowing the first user prompt to run.
                     engine.state.first { it is InferenceEngine.State.ModelReady }
                 }
             }
@@ -63,20 +69,9 @@ class GemmaRuntime(context: Context) {
 
         return try {
             val request = JSONObject(requestJson)
-            val requestedSystem = request.optString("system", "").trim()
-            if (requestedSystem.isNotEmpty() && requestedSystem != systemPrompt) {
-                systemPrompt = requestedSystem
-                runBlocking(Dispatchers.IO) {
-                    withTimeout(60_000L) {
-                        engine.state.first { it is InferenceEngine.State.ModelReady }
-                        engine.setSystemPrompt(systemPrompt)
-                        engine.state.first { it is InferenceEngine.State.ModelReady }
-                    }
-                }
-            }
-
             val messages = request.optJSONArray("messages")
             var latestUserMessage = ""
+
             if (messages != null) {
                 for (index in 0 until messages.length()) {
                     val message = messages.optJSONObject(index) ?: continue
@@ -97,7 +92,11 @@ class GemmaRuntime(context: Context) {
 
             val output = runBlocking(Dispatchers.IO) {
                 withTimeout(180_000L) {
+                    // The system prompt was already configured immediately
+                    // after model loading. Only start user inference once the
+                    // native engine is ready.
                     engine.state.first { it is InferenceEngine.State.ModelReady }
+
                     val result = StringBuilder()
                     engine.sendUserPrompt(latestUserMessage, 1024).collect { token ->
                         result.append(token)
@@ -114,11 +113,21 @@ class GemmaRuntime(context: Context) {
                     .toString()
             }
 
-            JSONObject().put("ok", true).put("text", output).toString()
+            JSONObject()
+                .put("ok", true)
+                .put("text", output)
+                .toString()
         } catch (error: Throwable) {
             JSONObject()
                 .put("ok", false)
-                .put("code", if (error is kotlinx.coroutines.TimeoutCancellationException) "LOCAL_MODEL_TIMEOUT" else "LOCAL_MODEL_FAILED")
+                .put(
+                    "code",
+                    if (error is kotlinx.coroutines.TimeoutCancellationException) {
+                        "LOCAL_MODEL_TIMEOUT"
+                    } else {
+                        "LOCAL_MODEL_FAILED"
+                    }
+                )
                 .put("message", error.message ?: "Gemma generation failed.")
                 .toString()
         }
