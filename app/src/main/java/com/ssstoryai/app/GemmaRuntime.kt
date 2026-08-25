@@ -93,15 +93,19 @@ class GemmaRuntime(context: Context) {
                         .toString()
                 }
 
-                // Gemma 3 1B can be surprisingly slow on a phone, especially
-                // for the first response. A short default makes the basic chat
-                // test finish instead of spending two minutes generating an
-                // unnecessarily long answer. Longer story requests can opt in
-                // with maxTokens, but we keep the native range conservative.
-                val predictLength = request.optInt("maxTokens", 32).coerceIn(1, 64)
+                // Start with a deliberately tiny response for the on-device
+                // smoke test. If Gemma can emit even a few tokens, we know the
+                // native inference path is alive. The web UI can request up to
+                // 16 tokens for this first milestone.
+                val predictLength = request.optInt("maxTokens", 8).coerceIn(1, 16)
 
                 val output = runBlocking(Dispatchers.IO) {
-                    withTimeout(60_000L) {
+                    // IMPORTANT: keep this timeout longer than the web UI's
+                    // 180-second safety timeout. The native llama.cpp call is
+                    // synchronous while each token is generated, so cancelling
+                    // too early can leave the native worker busy after Kotlin
+                    // has already reported a timeout.
+                    withTimeout(180_000L) {
                         engine.state.first { it is InferenceEngine.State.ModelReady }
 
                         val result = StringBuilder()
@@ -126,7 +130,6 @@ class GemmaRuntime(context: Context) {
                     .toString()
             } catch (error: Throwable) {
                 JSONObject()
-                    .put("ok", false)
                     .put(
                         "code",
                         if (error is kotlinx.coroutines.TimeoutCancellationException) {
@@ -135,6 +138,7 @@ class GemmaRuntime(context: Context) {
                             "LOCAL_MODEL_FAILED"
                         }
                     )
+                    .put("ok", false)
                     .put("message", error.message ?: "Gemma generation failed.")
                     .toString()
             }
