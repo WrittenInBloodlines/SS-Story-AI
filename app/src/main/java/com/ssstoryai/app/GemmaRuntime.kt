@@ -90,15 +90,17 @@ class GemmaRuntime(context: Context) {
                     .toString()
             }
 
+            // Keep the first local milestone deliberately small. Once native
+            // generation is proven reliable, the UI can raise this limit for
+            // longer story generations.
+            val predictLength = request.optInt("maxTokens", 256).coerceIn(1, 512)
+
             val output = runBlocking(Dispatchers.IO) {
                 withTimeout(180_000L) {
-                    // The system prompt was already configured immediately
-                    // after model loading. Only start user inference once the
-                    // native engine is ready.
                     engine.state.first { it is InferenceEngine.State.ModelReady }
 
                     val result = StringBuilder()
-                    engine.sendUserPrompt(latestUserMessage, 1024).collect { token ->
+                    engine.sendUserPrompt(latestUserMessage, predictLength).collect { token ->
                         result.append(token)
                     }
                     result.toString()
