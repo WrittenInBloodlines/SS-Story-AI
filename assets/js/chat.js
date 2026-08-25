@@ -24,6 +24,7 @@ let chat = null;
 let gemmaGenerating = false;
 let gemmaThinkingTimer = null;
 let gemmaTypingBubble = null;
+let gemmaStreamText = '';
 
 function chatUrl(chatId) {
   const params = new URLSearchParams({ project: projectId(), chat: chatId });
@@ -154,13 +155,11 @@ function render() {
 function startGemmaThinkingIndicator() {
   stopGemmaThinkingIndicator();
   removeGemmaTypingBubble();
+  gemmaStreamText = '';
 
-  // Gemma gets a real assistant bubble on the left. The dots are only shown
-  // while native inference is actually running and disappear once a response
-  // or an error arrives.
   const bubble = document.createElement('article');
   bubble.className = 'message message-assistant message-gemma-typing';
-  bubble.setAttribute('aria-label', 'Gemma is generating a response');
+  bubble.setAttribute('aria-label', 'Gemma is thinking');
   bubble.innerHTML = `
     <div class="message-role">Gemma</div>
     <div class="message-text gemma-typing-dots" aria-hidden="true">…</div>
@@ -173,7 +172,7 @@ function startGemmaThinkingIndicator() {
   const frames = ['…', '… ..', '… .. .', '… ..', '…'];
   let index = 0;
   gemmaThinkingTimer = window.setInterval(() => {
-    if (!gemmaGenerating || !gemmaTypingBubble) return;
+    if (!gemmaGenerating || !gemmaTypingBubble || gemmaStreamText) return;
     index = (index + 1) % frames.length;
     const dots = gemmaTypingBubble.querySelector('.gemma-typing-dots');
     if (dots) dots.textContent = frames[index];
@@ -192,6 +191,33 @@ function removeGemmaTypingBubble() {
     gemmaTypingBubble.remove();
     gemmaTypingBubble = null;
   }
+}
+
+function showGemmaToken(token) {
+  if (!token) return;
+
+  gemmaStreamText += token;
+
+  if (!gemmaTypingBubble) {
+    const bubble = document.createElement('article');
+    bubble.className = 'message message-assistant message-gemma-typing';
+    bubble.innerHTML = `
+      <div class="message-role">Gemma</div>
+      <div class="message-text gemma-stream-text"></div>
+    `;
+    box.appendChild(bubble);
+    gemmaTypingBubble = bubble;
+  }
+
+  const dots = gemmaTypingBubble.querySelector('.gemma-typing-dots');
+  if (dots) {
+    dots.className = 'message-text gemma-stream-text';
+  }
+
+  const text = gemmaTypingBubble.querySelector('.gemma-stream-text');
+  if (text) text.textContent = gemmaStreamText;
+
+  box.scrollTop = box.scrollHeight;
 }
 
 function saveMessage(text, bypassContinuity = false) {
@@ -263,27 +289,28 @@ function generateWithGemma() {
 
   const requestId = `gemma-${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-  // Keep this identical to the native runtime prompt. The native inference
-  // engine requires its system prompt to be configured immediately after the
-  // GGUF model is loaded, so generation must not attempt to replace it later.
+  // The old 8-token test value made Gemma stop mid-sentence. Give it enough
+  // room for a normal short reply, while keeping local inference bounded.
   const payload = JSON.stringify({
     messages,
-    maxTokens: 8
+    maxTokens: 96
   });
 
   gemmaGenerating = true;
   input.disabled = true;
-  status.textContent = 'Gemma • Generating…';
+  // The assistant bubble is now the only generation indicator. Once the first
+  // native token arrives, the dots become the actual streamed response.
+  status.textContent = 'Local model';
   startGemmaThinkingIndicator();
 
   let settled = false;
   let timeout = null;
 
   const cleanup = () => {
+    window.removeEventListener('ss-gemma-token', handleToken);
     window.removeEventListener('ss-gemma-generation', handleResult);
     if (timeout !== null) window.clearTimeout(timeout);
     stopGemmaThinkingIndicator();
-    removeGemmaTypingBubble();
   };
 
   const finish = (callback) => {
@@ -296,17 +323,26 @@ function generateWithGemma() {
     input.focus();
   };
 
+  const handleToken = event => {
+    const data = event?.detail;
+    if (!data || data.requestId !== requestId) return;
+    showGemmaToken(String(data.token || ''));
+  };
+
   const handleResult = event => {
     const data = event?.detail;
     if (!data || data.requestId !== requestId) return;
 
     finish(() => {
       if (!data.ok) {
+        removeGemmaTypingBubble();
         status.textContent = data.message || 'Gemma could not generate a response.';
         return;
       }
 
-      const text = String(data.text || '').trim();
+      const text = String(data.text || gemmaStreamText || '').trim();
+      removeGemmaTypingBubble();
+
       if (!text) {
         status.textContent = 'Gemma returned an empty response.';
         return;
@@ -333,10 +369,12 @@ function generateWithGemma() {
     });
   };
 
+  window.addEventListener('ss-gemma-token', handleToken);
   window.addEventListener('ss-gemma-generation', handleResult);
 
   timeout = window.setTimeout(() => {
     finish(() => {
+      removeGemmaTypingBubble();
       status.textContent = 'Gemma took too long to respond.';
     });
   }, 180000);
@@ -345,6 +383,7 @@ function generateWithGemma() {
     window.AndroidBridge.generateGemmaAsync(requestId, payload);
   } catch (error) {
     finish(() => {
+      removeGemmaTypingBubble();
       status.textContent = `Gemma error: ${error?.message || error}`;
     });
   }
