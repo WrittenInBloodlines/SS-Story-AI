@@ -24,8 +24,7 @@ class GemmaRuntime(context: Context) {
     private val generationLock = ReentrantLock()
 
     // llama.cpp requires the system prompt to be set immediately after the
-    // model is loaded. Keep it short because Gemma 3 1B has to process this
-    // prompt on-device before the first user token can be generated.
+    // model is loaded. Keep it short so Gemma 3 1B can start generating quickly.
     private val systemPrompt = "You are S•S Story AI, a helpful writing assistant. Follow the user's instructions and answer directly."
 
     @Synchronized
@@ -46,7 +45,8 @@ class GemmaRuntime(context: Context) {
                     // IMPORTANT: this must happen directly after loadModel().
                     engine.setSystemPrompt(systemPrompt)
 
-                    // Wait until native system-prompt processing is complete.
+                    // Do not allow a generation request to race with native
+                    // system-prompt processing.
                     engine.state.first { it is InferenceEngine.State.ModelReady }
                 }
             }
@@ -69,6 +69,10 @@ class GemmaRuntime(context: Context) {
                 .toString()
         }
 
+        // The native llama.cpp engine is stateful. Only one request may touch
+        // it at a time, and the next request must wait until the previous one
+        // has fully returned to ModelReady. This prevents the every-second-
+        // message native crash caused by overlapping generations.
         return generationLock.withLock {
             try {
                 val request = JSONObject(requestJson)
@@ -93,25 +97,29 @@ class GemmaRuntime(context: Context) {
                         .toString()
                 }
 
-                // Start with a deliberately tiny response for the on-device
-                // smoke test. If Gemma can emit even a few tokens, we know the
-                // native inference path is alive. The web UI can request up to
-                // 16 tokens for this first milestone.
-                val predictLength = request.optInt("maxTokens", 8).coerceIn(1, 16)
+                // 64 tokens is enough for a real short answer while still
+                // keeping Gemma 3 1B practical on a phone. The UI can request
+                // another value, but we cap it so one message cannot consume
+                // the whole device's memory/time budget.
+                val predictLength = request.optInt("maxTokens", 64).coerceIn(1, 96)
 
                 val output = runBlocking(Dispatchers.IO) {
-                    // IMPORTANT: keep this timeout longer than the web UI's
-                    // 180-second safety timeout. The native llama.cpp call is
-                    // synchronous while each token is generated, so cancelling
-                    // too early can leave the native worker busy after Kotlin
-                    // has already reported a timeout.
                     withTimeout(180_000L) {
+                        // Always start from a clean native state.
                         engine.state.first { it is InferenceEngine.State.ModelReady }
 
                         val result = StringBuilder()
                         engine.sendUserPrompt(latestUserMessage, predictLength).collect { token ->
                             result.append(token)
                         }
+
+                        // IMPORTANT: collect() can finish just before the
+                        // native state has transitioned back to ModelReady.
+                        // Wait for that transition before releasing the lock,
+                        // so the next message cannot hit the native engine too
+                        // early.
+                        engine.state.first { it is InferenceEngine.State.ModelReady }
+
                         result.toString()
                     }
                 }
@@ -148,10 +156,13 @@ class GemmaRuntime(context: Context) {
     @Synchronized
     fun close() {
         try {
-            if (engine.state.value.isModelLoaded) engine.cleanUp()
+            generationLock.withLock {
+                if (engine.state.value.isModelLoaded) engine.cleanUp()
+                loadedPath = null
+            }
         } catch (_: Throwable) {
+            loadedPath = null
         }
-        loadedPath = null
     }
 }
 
