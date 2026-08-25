@@ -18,7 +18,6 @@ import java.io.File
 class GemmaRuntime(context: Context) {
     private val engine: InferenceEngine = AiChat.getInferenceEngine(context)
     private var loadedPath: String? = null
-    private var systemPrompt = "You are S•S Story AI, a helpful writing assistant. Follow the user's story instructions faithfully, do not invent major plot events unless requested, and write directly when the user asks for story text."
 
     @Synchronized
     fun loadModel(modelPath: String): String {
@@ -33,7 +32,6 @@ class GemmaRuntime(context: Context) {
             runBlocking(Dispatchers.IO) {
                 engine.state.first { it is InferenceEngine.State.Initialized }
                 engine.loadModel(file.absolutePath)
-                engine.setSystemPrompt(systemPrompt)
             }
             loadedPath = file.absolutePath
             "OK"
@@ -56,9 +54,6 @@ class GemmaRuntime(context: Context) {
 
         return try {
             val request = JSONObject(requestJson)
-            val requestedSystem = request.optString("system", "").trim()
-            if (requestedSystem.isNotEmpty()) systemPrompt = requestedSystem
-
             val messages = request.optJSONArray("messages")
             var latestUserMessage = ""
             if (messages != null) {
@@ -79,10 +74,33 @@ class GemmaRuntime(context: Context) {
                     .toString()
             }
 
+            /*
+             * Keep the first native Gemma path deliberately minimal.
+             * The upstream llama.android sample sends the user prompt directly
+             * after loading the GGUF model. In particular, do not call
+             * setSystemPrompt() here: the native Android runtime requires a
+             * system prompt to be processed immediately after loadModel(), and
+             * doing it from this later request path can leave the native engine
+             * in ProcessingSystemPrompt/ProcessingUserPrompt when generation
+             * fails, which makes the WebView appear to be generating forever.
+             *
+             * The web layer can still send the full conversation, while the
+             * native runtime uses the newest user message for this milestone.
+             */
             val output = runBlocking(Dispatchers.IO) {
                 val result = StringBuilder()
-                engine.sendUserPrompt(latestUserMessage, 1024).collect { token -> result.append(token) }
+                engine.sendUserPrompt(latestUserMessage, 1024).collect { token ->
+                    result.append(token)
+                }
                 result.toString()
+            }
+
+            if (output.isBlank()) {
+                return JSONObject()
+                    .put("ok", false)
+                    .put("code", "LOCAL_MODEL_EMPTY_RESPONSE")
+                    .put("message", "Gemma processed the request but returned no generated tokens. The native inference path rejected the prompt or stopped before emitting a response.")
+                    .toString()
             }
 
             JSONObject().put("ok", true).put("text", output).toString()
