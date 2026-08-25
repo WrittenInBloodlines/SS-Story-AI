@@ -9,6 +9,8 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.json.JSONObject
 import java.io.File
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
 /**
  * Local GGUF runtime for the first real Gemma milestone.
@@ -19,11 +21,12 @@ import java.io.File
 class GemmaRuntime(context: Context) {
     private val engine: InferenceEngine = AiChat.getInferenceEngine(context)
     private var loadedPath: String? = null
+    private val generationLock = ReentrantLock()
 
     // llama.cpp requires the system prompt to be set immediately after the
-    // model is loaded. Keep the native prompt here and do not call
-    // setSystemPrompt() later during generation.
-    private val systemPrompt = "You are S•S Story AI, a writing partner. Follow the user's instructions closely. Do not invent major plot events unless the user asks for them. When the user asks for story text, write the story directly without a preface."
+    // model is loaded. Keep it short because Gemma 3 1B has to process this
+    // prompt on-device before the first user token can be generated.
+    private val systemPrompt = "You are S•S Story AI, a helpful writing assistant. Follow the user's instructions and answer directly."
 
     @Synchronized
     fun loadModel(modelPath: String): String {
@@ -66,72 +69,75 @@ class GemmaRuntime(context: Context) {
                 .toString()
         }
 
-        return try {
-            val request = JSONObject(requestJson)
-            val messages = request.optJSONArray("messages")
-            var latestUserMessage = ""
+        return generationLock.withLock {
+            try {
+                val request = JSONObject(requestJson)
+                val messages = request.optJSONArray("messages")
+                var latestUserMessage = ""
 
-            if (messages != null) {
-                for (index in 0 until messages.length()) {
-                    val message = messages.optJSONObject(index) ?: continue
-                    if (message.optString("role", "user") == "user") {
-                        val content = message.optString("content", "").trim()
-                        if (content.isNotEmpty()) latestUserMessage = content
+                if (messages != null) {
+                    for (index in 0 until messages.length()) {
+                        val message = messages.optJSONObject(index) ?: continue
+                        if (message.optString("role", "user") == "user") {
+                            val content = message.optString("content", "").trim()
+                            if (content.isNotEmpty()) latestUserMessage = content
+                        }
                     }
                 }
-            }
 
-            if (latestUserMessage.isBlank()) {
-                return JSONObject()
-                    .put("ok", false)
-                    .put("code", "EMPTY_USER_MESSAGE")
-                    .put("message", "No user message was supplied.")
-                    .toString()
-            }
-
-            // Gemma 3 1B on a phone can be quite slow, especially during the
-            // first native generation. Keep the default short so a simple test
-            // such as "Hallo Gemma, wer bist du?" actually finishes quickly.
-            // The UI can request more tokens later for longer story generation.
-            val predictLength = request.optInt("maxTokens", 96).coerceIn(1, 256)
-
-            val output = runBlocking(Dispatchers.IO) {
-                withTimeout(120_000L) {
-                    engine.state.first { it is InferenceEngine.State.ModelReady }
-
-                    val result = StringBuilder()
-                    engine.sendUserPrompt(latestUserMessage, predictLength).collect { token ->
-                        result.append(token)
-                    }
-                    result.toString()
+                if (latestUserMessage.isBlank()) {
+                    return@withLock JSONObject()
+                        .put("ok", false)
+                        .put("code", "EMPTY_USER_MESSAGE")
+                        .put("message", "No user message was supplied.")
+                        .toString()
                 }
-            }
 
-            if (output.isBlank()) {
-                return JSONObject()
+                // Gemma 3 1B can be surprisingly slow on a phone, especially
+                // for the first response. A short default makes the basic chat
+                // test finish instead of spending two minutes generating an
+                // unnecessarily long answer. Longer story requests can opt in
+                // with maxTokens, but we keep the native range conservative.
+                val predictLength = request.optInt("maxTokens", 32).coerceIn(1, 64)
+
+                val output = runBlocking(Dispatchers.IO) {
+                    withTimeout(60_000L) {
+                        engine.state.first { it is InferenceEngine.State.ModelReady }
+
+                        val result = StringBuilder()
+                        engine.sendUserPrompt(latestUserMessage, predictLength).collect { token ->
+                            result.append(token)
+                        }
+                        result.toString()
+                    }
+                }
+
+                if (output.isBlank()) {
+                    return@withLock JSONObject()
+                        .put("ok", false)
+                        .put("code", "LOCAL_MODEL_EMPTY_RESPONSE")
+                        .put("message", "Gemma processed the request but returned no generated tokens.")
+                        .toString()
+                }
+
+                JSONObject()
+                    .put("ok", true)
+                    .put("text", output)
+                    .toString()
+            } catch (error: Throwable) {
+                JSONObject()
                     .put("ok", false)
-                    .put("code", "LOCAL_MODEL_EMPTY_RESPONSE")
-                    .put("message", "Gemma processed the request but returned no generated tokens.")
+                    .put(
+                        "code",
+                        if (error is kotlinx.coroutines.TimeoutCancellationException) {
+                            "LOCAL_MODEL_TIMEOUT"
+                        } else {
+                            "LOCAL_MODEL_FAILED"
+                        }
+                    )
+                    .put("message", error.message ?: "Gemma generation failed.")
                     .toString()
             }
-
-            JSONObject()
-                .put("ok", true)
-                .put("text", output)
-                .toString()
-        } catch (error: Throwable) {
-            JSONObject()
-                .put("ok", false)
-                .put(
-                    "code",
-                    if (error is kotlinx.coroutines.TimeoutCancellationException) {
-                        "LOCAL_MODEL_TIMEOUT"
-                    } else {
-                        "LOCAL_MODEL_FAILED"
-                    }
-                )
-                .put("message", error.message ?: "Gemma generation failed.")
-                .toString()
         }
     }
 
