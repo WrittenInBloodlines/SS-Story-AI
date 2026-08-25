@@ -23,6 +23,7 @@ let activeChatId = project.activeChatId || requestedChatId || null;
 let chat = null;
 let gemmaGenerating = false;
 let gemmaThinkingTimer = null;
+let gemmaTypingBubble = null;
 
 function chatUrl(chatId) {
   const params = new URLSearchParams({ project: projectId(), chat: chatId });
@@ -142,7 +143,7 @@ function render() {
 
   box.innerHTML = messages.map(message => `
     <article class="message ${message.role === 'user' ? 'message-user' : 'message-assistant'}">
-      <div class="message-role">${message.role === 'user' ? 'You' : 'S•S Story AI'}</div>
+      <div class="message-role">${message.role === 'user' ? 'You' : 'Gemma'}</div>
       <div class="message-text">${esc(message.text).replace(/\n/g, '<br>')}</div>
     </article>
   `).join('');
@@ -152,22 +153,41 @@ function render() {
 
 function startGemmaThinkingIndicator() {
   stopGemmaThinkingIndicator();
+  removeGemmaTypingBubble();
 
-  const dots = ['', '.', '..', '...'];
+  const bubble = document.createElement('article');
+  bubble.className = 'message message-assistant message-gemma-typing';
+  bubble.setAttribute('aria-label', 'Gemma is generating a response');
+  bubble.innerHTML = `
+    <div class="message-role">Gemma</div>
+    <div class="message-text gemma-typing-dots" aria-hidden="true">…</div>
+  `;
+
+  box.appendChild(bubble);
+  gemmaTypingBubble = bubble;
+  box.scrollTop = box.scrollHeight;
+
+  const frames = ['…', '… ..', '… .. .', '… ..', '…'];
   let index = 0;
-  status.textContent = 'Gemma • generating';
-
   gemmaThinkingTimer = window.setInterval(() => {
-    if (!gemmaGenerating) return;
-    index = (index + 1) % dots.length;
-    status.textContent = `Gemma • generating${dots[index]}`;
-  }, 450);
+    if (!gemmaGenerating || !gemmaTypingBubble) return;
+    index = (index + 1) % frames.length;
+    const dots = gemmaTypingBubble.querySelector('.gemma-typing-dots');
+    if (dots) dots.textContent = frames[index];
+  }, 420);
 }
 
 function stopGemmaThinkingIndicator() {
   if (gemmaThinkingTimer !== null) {
     window.clearInterval(gemmaThinkingTimer);
     gemmaThinkingTimer = null;
+  }
+}
+
+function removeGemmaTypingBubble() {
+  if (gemmaTypingBubble) {
+    gemmaTypingBubble.remove();
+    gemmaTypingBubble = null;
   }
 }
 
@@ -255,6 +275,7 @@ function generateWithGemma() {
     window.removeEventListener('ss-gemma-generation', handleResult);
     if (timeout !== null) window.clearTimeout(timeout);
     stopGemmaThinkingIndicator();
+    removeGemmaTypingBubble();
   };
 
   const finish = (callback) => {
