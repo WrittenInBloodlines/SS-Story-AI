@@ -13,7 +13,10 @@ export function createLocalModelAdapter() {
         system: request.system || '',
         messages: request.messages || [],
         temperature: request.settings?.temperature ?? 0.8,
-        maxTokens: request.settings?.maxTokens ?? 2000
+        // Keep the first local Android generation short. Gemma 3 1B can be
+        // slow on-device, so 96 tokens is enough for quick conversational
+        // tests while still allowing a useful answer.
+        maxTokens: Math.min(request.settings?.maxTokens ?? 96, 256)
       });
 
       const requestId = `gemma-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -50,6 +53,8 @@ export function createLocalModelAdapter() {
           });
         };
 
+        // 2 minutes is enough for a short 96-token response, but prevents
+        // the UI from being stuck indefinitely if native inference fails.
         const timeout = setTimeout(() => {
           finish(() => {
             reject(new AIModelError(
@@ -57,7 +62,7 @@ export function createLocalModelAdapter() {
               'LOCAL_MODEL_TIMEOUT'
             ));
           });
-        }, 180000);
+        }, 120000);
 
         window.addEventListener('ss-gemma-generation', handleResult);
 
