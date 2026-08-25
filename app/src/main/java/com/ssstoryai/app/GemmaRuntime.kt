@@ -19,6 +19,10 @@ import kotlin.concurrent.withLock
  * responsible for projects, conversations, story memory and prompts.
  */
 class GemmaRuntime(context: Context) {
+    interface TokenListener {
+        fun onToken(token: String)
+    }
+
     private val engine: InferenceEngine = AiChat.getInferenceEngine(context)
     private var loadedPath: String? = null
     private val generationLock = ReentrantLock()
@@ -41,12 +45,8 @@ class GemmaRuntime(context: Context) {
                 withTimeout(60_000L) {
                     engine.state.first { it is InferenceEngine.State.Initialized }
                     engine.loadModel(file.absolutePath)
-
-                    // IMPORTANT: this must happen directly after loadModel().
+                    // IMPORTANT: llama.cpp requires this directly after loading.
                     engine.setSystemPrompt(systemPrompt)
-
-                    // Do not allow a generation request to race with native
-                    // system-prompt processing.
                     engine.state.first { it is InferenceEngine.State.ModelReady }
                 }
             }
@@ -60,7 +60,9 @@ class GemmaRuntime(context: Context) {
 
     fun isLoaded(): Boolean = loadedPath != null && engine.state.value.isModelLoaded
 
-    fun generate(requestJson: String): String {
+    fun generate(requestJson: String): String = generate(requestJson, null)
+
+    fun generate(requestJson: String, tokenListener: TokenListener?): String {
         if (!isLoaded()) {
             return JSONObject()
                 .put("ok", false)
@@ -69,10 +71,9 @@ class GemmaRuntime(context: Context) {
                 .toString()
         }
 
-        // The native llama.cpp engine is stateful. Only one request may touch
-        // it at a time, and the next request must wait until the previous one
-        // has fully returned to ModelReady. This prevents the every-second-
-        // message native crash caused by overlapping generations.
+        // The native engine is stateful. Serialize generations so a second
+        // message cannot enter llama.cpp while the previous request is still
+        // returning to ModelReady.
         return generationLock.withLock {
             try {
                 val request = JSONObject(requestJson)
@@ -97,29 +98,32 @@ class GemmaRuntime(context: Context) {
                         .toString()
                 }
 
-                // 64 tokens is enough for a real short answer while still
-                // keeping Gemma 3 1B practical on a phone. The UI can request
-                // another value, but we cap it so one message cannot consume
-                // the whole device's memory/time budget.
-                val predictLength = request.optInt("maxTokens", 64).coerceIn(1, 96)
+                // Keep the completion bounded, but no longer at the old 8-token
+                // test value. 96 tokens gives Gemma enough room to finish normal
+                // short chat replies without making the phone chew through a huge
+                // completion.
+                val predictLength = request.optInt("maxTokens", 96).coerceIn(1, 128)
 
                 val output = runBlocking(Dispatchers.IO) {
                     withTimeout(180_000L) {
-                        // Always start from a clean native state.
                         engine.state.first { it is InferenceEngine.State.ModelReady }
 
                         val result = StringBuilder()
                         engine.sendUserPrompt(latestUserMessage, predictLength).collect { token ->
                             result.append(token)
+                            if (!token.isNullOrEmpty()) {
+                                try {
+                                    tokenListener?.onToken(token)
+                                } catch (_: Throwable) {
+                                    // UI streaming must never be able to break
+                                    // native inference if the WebView disappears.
+                                }
+                            }
                         }
 
-                        // IMPORTANT: collect() can finish just before the
-                        // native state has transitioned back to ModelReady.
-                        // Wait for that transition before releasing the lock,
-                        // so the next message cannot hit the native engine too
-                        // early.
+                        // Do not release the native-engine lock until llama.cpp
+                        // has actually returned to its reusable state.
                         engine.state.first { it is InferenceEngine.State.ModelReady }
-
                         result.toString()
                     }
                 }
