@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.locks.ReentrantLock
@@ -42,13 +43,7 @@ class GemmaRuntime(context: Context) {
 
         return try {
             runBlocking(Dispatchers.IO) {
-                withTimeout(60_000L) {
-                    engine.state.first { it is InferenceEngine.State.Initialized }
-                    engine.loadModel(file.absolutePath)
-                    // IMPORTANT: llama.cpp requires this directly after loading.
-                    engine.setSystemPrompt(systemPrompt)
-                    engine.state.first { it is InferenceEngine.State.ModelReady }
-                }
+                withTimeout(60_000L) { loadModelInternal(file) }
             }
             loadedPath = file.absolutePath
             "OK"
@@ -56,6 +51,14 @@ class GemmaRuntime(context: Context) {
             loadedPath = null
             "${error.javaClass.simpleName}: ${error.message ?: "unknown GGUF model error"}"
         }
+    }
+
+    private fun loadModelInternal(file: File) {
+        engine.state.first { it is InferenceEngine.State.Initialized }
+        engine.loadModel(file.absolutePath)
+        // IMPORTANT: llama.cpp requires this directly after loading.
+        engine.setSystemPrompt(systemPrompt)
+        engine.state.first { it is InferenceEngine.State.ModelReady }
     }
 
     fun isLoaded(): Boolean = loadedPath != null && engine.state.value.isModelLoaded
@@ -71,63 +74,46 @@ class GemmaRuntime(context: Context) {
                 .toString()
         }
 
-        // The native engine is stateful. Serialize generations so a second
-        // message cannot enter llama.cpp while the previous request is still
-        // returning to ModelReady.
         return generationLock.withLock {
             try {
                 val request = JSONObject(requestJson)
-                val messages = request.optJSONArray("messages")
-                var latestUserMessage = ""
-
-                if (messages != null) {
-                    for (index in 0 until messages.length()) {
-                        val message = messages.optJSONObject(index) ?: continue
-                        if (message.optString("role", "user") == "user") {
-                            val content = message.optString("content", "").trim()
-                            if (content.isNotEmpty()) latestUserMessage = content
-                        }
-                    }
-                }
-
-                if (latestUserMessage.isBlank()) {
-                    return@withLock JSONObject()
-                        .put("ok", false)
-                        .put("code", "EMPTY_USER_MESSAGE")
-                        .put("message", "No user message was supplied.")
-                        .toString()
-                }
-
-                // Keep the completion bounded, but no longer at the old 8-token
-                // test value. 96 tokens gives Gemma enough room to finish normal
-                // short chat replies without making the phone chew through a huge
-                // completion.
+                val messages = request.optJSONArray("messages") ?: JSONArray()
                 val predictLength = request.optInt("maxTokens", 96).coerceIn(1, 128)
 
-                val output = runBlocking(Dispatchers.IO) {
+                // The crash report showed llama.cpp receiving two consecutive
+                // user roles on the second message. The public InferenceEngine
+                // API does not expose a reliable assistant-history append/reset
+                // operation, so reusing its native conversation is unsafe here.
+                // For multi-turn chats, rebuild the model and send the complete
+                // web conversation as ONE user turn. The Gemma chat template then
+                // always receives a valid single user message.
+                if (messages.length() > 1) {
+                    resetNativeConversation()
+                } else {
+                    engine.state.first { it is InferenceEngine.State.ModelReady }
+                }
+
+                val prompt = buildSingleTurnPrompt(messages)
+                val result = StringBuilder()
+
+                runBlocking(Dispatchers.IO) {
                     withTimeout(180_000L) {
                         engine.state.first { it is InferenceEngine.State.ModelReady }
-
-                        val result = StringBuilder()
-                        engine.sendUserPrompt(latestUserMessage, predictLength).collect { token ->
+                        engine.sendUserPrompt(prompt, predictLength).collect { token ->
                             result.append(token)
                             if (!token.isNullOrEmpty()) {
                                 try {
                                     tokenListener?.onToken(token)
                                 } catch (_: Throwable) {
-                                    // UI streaming must never be able to break
-                                    // native inference if the WebView disappears.
+                                    // WebView/UI failures must never abort native inference.
                                 }
                             }
                         }
-
-                        // Do not release the native-engine lock until llama.cpp
-                        // has actually returned to its reusable state.
                         engine.state.first { it is InferenceEngine.State.ModelReady }
-                        result.toString()
                     }
                 }
 
+                val output = result.toString()
                 if (output.isBlank()) {
                     return@withLock JSONObject()
                         .put("ok", false)
@@ -155,6 +141,42 @@ class GemmaRuntime(context: Context) {
                     .toString()
             }
         }
+    }
+
+    private fun resetNativeConversation() {
+        val path = loadedPath ?: throw IllegalStateException("No loaded model path is available.")
+        val file = File(path)
+        if (!file.exists() || !file.isFile) {
+            throw IllegalStateException("The loaded Gemma model file is no longer available.")
+        }
+
+        runBlocking(Dispatchers.IO) {
+            withTimeout(60_000L) {
+                if (engine.state.value.isModelLoaded) engine.cleanUp()
+                engine.state.first { it is InferenceEngine.State.Initialized }
+                engine.loadModel(file.absolutePath)
+                // Keep this immediately after loadModel(), as required by llama.cpp.
+                engine.setSystemPrompt(systemPrompt)
+                engine.state.first { it is InferenceEngine.State.ModelReady }
+            }
+        }
+    }
+
+    private fun buildSingleTurnPrompt(messages: JSONArray): String {
+        if (messages.length() == 0) return "Please respond directly to the user."
+
+        val transcript = StringBuilder()
+        for (index in 0 until messages.length()) {
+            val message = messages.optJSONObject(index) ?: continue
+            val role = message.optString("role", "user")
+            val content = message.optString("content", "").trim()
+            if (content.isBlank()) continue
+
+            transcript.append(if (role == "assistant") "Assistant: " else "User: ")
+            transcript.append(content).append("\n")
+        }
+        transcript.append("\nAssistant:")
+        return transcript.toString()
     }
 
     @Synchronized
