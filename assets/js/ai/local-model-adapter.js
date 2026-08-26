@@ -13,10 +13,7 @@ export function createLocalModelAdapter() {
         system: request.system || '',
         messages: request.messages || [],
         temperature: request.settings?.temperature ?? 0.8,
-        // First make the native runtime prove that it can answer quickly.
-        // 32 tokens is enough for prompts such as "Hallo Gemma, wer bist du?"
-        // and avoids wasting the test run on a long completion.
-        maxTokens: Math.min(request.settings?.maxTokens ?? 32, 64)
+        maxTokens: Math.min(request.settings?.maxTokens ?? 96, 128)
       });
 
       const requestId = `gemma-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -53,8 +50,6 @@ export function createLocalModelAdapter() {
           });
         };
 
-        // A short completion should finish well before this. If it does not,
-        // report the native runtime as unhealthy instead of hanging the chat.
         const timeout = setTimeout(() => {
           finish(() => {
             reject(new AIModelError(
@@ -62,7 +57,7 @@ export function createLocalModelAdapter() {
               'LOCAL_MODEL_TIMEOUT'
             ));
           });
-        }, 45000);
+        }, 180000);
 
         window.addEventListener('ss-gemma-generation', handleResult);
 

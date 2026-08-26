@@ -61,9 +61,7 @@ public class MainActivity extends Activity {
 
         /**
          * Starts local Gemma generation without blocking the WebView JavaScript
-         * bridge. The previous synchronous bridge call could leave the WebView
-         * waiting for the entire native inference, which made the app appear
-         * frozen while Gemma was generating.
+         * bridge. Native tokens are forwarded to JavaScript as they arrive.
          */
         @JavascriptInterface
         public void generateGemmaAsync(String requestId, String payload) {
@@ -75,7 +73,7 @@ public class MainActivity extends Activity {
             new Thread(() -> {
                 String result;
                 try {
-                    result = gemmaRuntime.generate(payload);
+                    result = gemmaRuntime.generate(payload, token -> notifyGemmaToken(requestId, token));
                 } catch (Throwable error) {
                     result = "{\"ok\":false,\"code\":\"LOCAL_MODEL_FAILED\",\"message\":\"Gemma generation failed.\"}";
                 }
@@ -180,6 +178,18 @@ public class MainActivity extends Activity {
             if (webView == null) return;
             String script = "window.dispatchEvent(new CustomEvent('ss-gemma-status',{detail:{ok:" + ok
                     + ",message:" + JSONObject.quote(message) + "}}));";
+            webView.evaluateJavascript(script, null);
+        });
+    }
+
+    private void notifyGemmaToken(String requestId, String token) {
+        if (token == null || token.isEmpty()) return;
+        runOnUiThread(() -> {
+            if (webView == null) return;
+            String script = "window.dispatchEvent(new CustomEvent('ss-gemma-token',{detail:{requestId:"
+                    + JSONObject.quote(requestId == null ? "" : requestId)
+                    + ",token:" + JSONObject.quote(token)
+                    + "}}));";
             webView.evaluateJavascript(script, null);
         });
     }

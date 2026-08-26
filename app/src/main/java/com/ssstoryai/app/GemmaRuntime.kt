@@ -7,6 +7,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.locks.ReentrantLock
@@ -19,6 +20,10 @@ import kotlin.concurrent.withLock
  * responsible for projects, conversations, story memory and prompts.
  */
 class GemmaRuntime(context: Context) {
+    interface TokenListener {
+        fun onToken(token: String)
+    }
+
     private val engine: InferenceEngine = AiChat.getInferenceEngine(context)
     private var loadedPath: String? = null
     private val generationLock = ReentrantLock()
@@ -38,17 +43,7 @@ class GemmaRuntime(context: Context) {
 
         return try {
             runBlocking(Dispatchers.IO) {
-                withTimeout(60_000L) {
-                    engine.state.first { it is InferenceEngine.State.Initialized }
-                    engine.loadModel(file.absolutePath)
-
-                    // IMPORTANT: this must happen directly after loadModel().
-                    engine.setSystemPrompt(systemPrompt)
-
-                    // Do not allow a generation request to race with native
-                    // system-prompt processing.
-                    engine.state.first { it is InferenceEngine.State.ModelReady }
-                }
+                withTimeout(60_000L) { loadModelInternal(file) }
             }
             loadedPath = file.absolutePath
             "OK"
@@ -58,9 +53,19 @@ class GemmaRuntime(context: Context) {
         }
     }
 
+    private fun loadModelInternal(file: File) {
+        engine.state.first { it is InferenceEngine.State.Initialized }
+        engine.loadModel(file.absolutePath)
+        // IMPORTANT: llama.cpp requires this directly after loading.
+        engine.setSystemPrompt(systemPrompt)
+        engine.state.first { it is InferenceEngine.State.ModelReady }
+    }
+
     fun isLoaded(): Boolean = loadedPath != null && engine.state.value.isModelLoaded
 
-    fun generate(requestJson: String): String {
+    fun generate(requestJson: String): String = generate(requestJson, null)
+
+    fun generate(requestJson: String, tokenListener: TokenListener?): String {
         if (!isLoaded()) {
             return JSONObject()
                 .put("ok", false)
@@ -69,61 +74,46 @@ class GemmaRuntime(context: Context) {
                 .toString()
         }
 
-        // The native llama.cpp engine is stateful. Only one request may touch
-        // it at a time, and the next request must wait until the previous one
-        // has fully returned to ModelReady. This prevents the every-second-
-        // message native crash caused by overlapping generations.
         return generationLock.withLock {
             try {
                 val request = JSONObject(requestJson)
-                val messages = request.optJSONArray("messages")
-                var latestUserMessage = ""
+                val messages = request.optJSONArray("messages") ?: JSONArray()
+                val predictLength = request.optInt("maxTokens", 96).coerceIn(1, 128)
 
-                if (messages != null) {
-                    for (index in 0 until messages.length()) {
-                        val message = messages.optJSONObject(index) ?: continue
-                        if (message.optString("role", "user") == "user") {
-                            val content = message.optString("content", "").trim()
-                            if (content.isNotEmpty()) latestUserMessage = content
-                        }
-                    }
+                // The crash report showed llama.cpp receiving two consecutive
+                // user roles on the second message. The public InferenceEngine
+                // API does not expose a reliable assistant-history append/reset
+                // operation, so reusing its native conversation is unsafe here.
+                // For multi-turn chats, rebuild the model and send the complete
+                // web conversation as ONE user turn. The Gemma chat template then
+                // always receives a valid single user message.
+                if (messages.length() > 1) {
+                    resetNativeConversation()
+                } else {
+                    engine.state.first { it is InferenceEngine.State.ModelReady }
                 }
 
-                if (latestUserMessage.isBlank()) {
-                    return@withLock JSONObject()
-                        .put("ok", false)
-                        .put("code", "EMPTY_USER_MESSAGE")
-                        .put("message", "No user message was supplied.")
-                        .toString()
-                }
+                val prompt = buildSingleTurnPrompt(messages)
+                val result = StringBuilder()
 
-                // 64 tokens is enough for a real short answer while still
-                // keeping Gemma 3 1B practical on a phone. The UI can request
-                // another value, but we cap it so one message cannot consume
-                // the whole device's memory/time budget.
-                val predictLength = request.optInt("maxTokens", 64).coerceIn(1, 96)
-
-                val output = runBlocking(Dispatchers.IO) {
+                runBlocking(Dispatchers.IO) {
                     withTimeout(180_000L) {
-                        // Always start from a clean native state.
                         engine.state.first { it is InferenceEngine.State.ModelReady }
-
-                        val result = StringBuilder()
-                        engine.sendUserPrompt(latestUserMessage, predictLength).collect { token ->
+                        engine.sendUserPrompt(prompt, predictLength).collect { token ->
                             result.append(token)
+                            if (!token.isNullOrEmpty()) {
+                                try {
+                                    tokenListener?.onToken(token)
+                                } catch (_: Throwable) {
+                                    // WebView/UI failures must never abort native inference.
+                                }
+                            }
                         }
-
-                        // IMPORTANT: collect() can finish just before the
-                        // native state has transitioned back to ModelReady.
-                        // Wait for that transition before releasing the lock,
-                        // so the next message cannot hit the native engine too
-                        // early.
                         engine.state.first { it is InferenceEngine.State.ModelReady }
-
-                        result.toString()
                     }
                 }
 
+                val output = result.toString()
                 if (output.isBlank()) {
                     return@withLock JSONObject()
                         .put("ok", false)
@@ -151,6 +141,42 @@ class GemmaRuntime(context: Context) {
                     .toString()
             }
         }
+    }
+
+    private fun resetNativeConversation() {
+        val path = loadedPath ?: throw IllegalStateException("No loaded model path is available.")
+        val file = File(path)
+        if (!file.exists() || !file.isFile) {
+            throw IllegalStateException("The loaded Gemma model file is no longer available.")
+        }
+
+        runBlocking(Dispatchers.IO) {
+            withTimeout(60_000L) {
+                if (engine.state.value.isModelLoaded) engine.cleanUp()
+                engine.state.first { it is InferenceEngine.State.Initialized }
+                engine.loadModel(file.absolutePath)
+                // Keep this immediately after loadModel(), as required by llama.cpp.
+                engine.setSystemPrompt(systemPrompt)
+                engine.state.first { it is InferenceEngine.State.ModelReady }
+            }
+        }
+    }
+
+    private fun buildSingleTurnPrompt(messages: JSONArray): String {
+        if (messages.length() == 0) return "Please respond directly to the user."
+
+        val transcript = StringBuilder()
+        for (index in 0 until messages.length()) {
+            val message = messages.optJSONObject(index) ?: continue
+            val role = message.optString("role", "user")
+            val content = message.optString("content", "").trim()
+            if (content.isBlank()) continue
+
+            transcript.append(if (role == "assistant") "Assistant: " else "User: ")
+            transcript.append(content).append("\n")
+        }
+        transcript.append("\nAssistant:")
+        return transcript.toString()
     }
 
     @Synchronized
