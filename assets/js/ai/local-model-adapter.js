@@ -5,9 +5,10 @@ function createPayload(request) {
     system: request.system || '',
     messages: request.messages || [],
     temperature: request.settings?.temperature ?? 0.8,
-    // Keep short replies snappy on-device. Long story generation can continue
-    // in multiple chunks later instead of making one request feel frozen.
-    maxTokens: Math.min(request.settings?.maxTokens ?? 48, 64)
+    // Give story generation enough room while still keeping normal replies
+    // reasonably bounded. This is a maximum, not a requirement to generate
+    // this many tokens.
+    maxTokens: Math.min(request.settings?.maxTokens ?? 256, 256)
   });
 }
 
