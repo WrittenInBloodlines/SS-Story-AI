@@ -59,45 +59,43 @@ class GemmaRuntime(context: Context) {
 
     fun generate(requestJson: String, tokenListener: TokenListener?): String {
         if (!isLoaded()) {
-            return JSONObject().put("ok", false).put("code", "LOCAL_MODEL_NOT_LOADED")
-                .put("message", "Gemma is not loaded on this device yet.").toString()
+            return JSONObject()
+                .put("ok", false)
+                .put("code", "LOCAL_MODEL_NOT_LOADED")
+                .put("message", "Gemma is not loaded on this device yet.")
+                .toString()
         }
 
         return generationLock.withLock {
             try {
                 val request = JSONObject(requestJson)
                 val messages = request.optJSONArray("messages") ?: JSONArray()
-                val predictLength = request.optInt("maxTokens", 48).coerceIn(1, 64)
+                val predictLength = request.optInt("maxTokens", 32).coerceIn(1, 64)
 
-                // The Android llama.cpp wrapper keeps native conversation state.
-                // Rebuild that state when a real chat history is supplied so a
-                // second user message cannot be interpreted as another turn in
-                // the old native conversation.
-                if (messages.length() > 1) {
-                    resetNativeConversation()
-                } else {
-                    // Flow.first is suspend, so this readiness check must run
-                    // inside a coroutine even though generate() itself is synchronous.
-                    runBlocking(Dispatchers.IO) {
-                        withTimeout(10_000L) {
-                            engine.state.first { it is InferenceEngine.State.ModelReady }
-                        }
+                // Keep the native conversation alive between requests. Re-loading
+                // the GGUF model for every message was the main reason later
+                // questions took minutes and made the chat appear to ignore input.
+                // The native engine already owns the previous assistant turn, so
+                // only send the newest user message on subsequent requests.
+                runBlocking(Dispatchers.IO) {
+                    withTimeout(10_000L) {
+                        engine.state.first { it is InferenceEngine.State.ModelReady }
                     }
                 }
 
-                val prompt = buildSingleTurnPrompt(messages)
+                val prompt = latestUserPrompt(messages)
                 val result = StringBuilder()
 
                 runBlocking(Dispatchers.IO) {
                     withTimeout(180_000L) {
                         engine.state.first { it is InferenceEngine.State.ModelReady }
                         engine.sendUserPrompt(prompt, predictLength).collect { token ->
-                            result.append(token)
                             if (!token.isNullOrEmpty()) {
+                                result.append(token)
                                 try {
                                     tokenListener?.onToken(token)
                                 } catch (_: Throwable) {
-                                    // UI streaming must never cancel inference.
+                                    // UI streaming failures must never abort inference.
                                 }
                             }
                         }
@@ -107,50 +105,43 @@ class GemmaRuntime(context: Context) {
 
                 val output = result.toString()
                 if (output.isBlank()) {
-                    return@withLock JSONObject().put("ok", false).put("code", "LOCAL_MODEL_EMPTY_RESPONSE")
-                        .put("message", "Gemma processed the request but returned no generated tokens.").toString()
+                    return@withLock JSONObject()
+                        .put("ok", false)
+                        .put("code", "LOCAL_MODEL_EMPTY_RESPONSE")
+                        .put("message", "Gemma processed the request but returned no generated tokens.")
+                        .toString()
                 }
 
-                JSONObject().put("ok", true).put("text", output).toString()
+                JSONObject()
+                    .put("ok", true)
+                    .put("text", output)
+                    .toString()
             } catch (error: Throwable) {
-                JSONObject().put("ok", false).put(
-                    "code",
-                    if (error is kotlinx.coroutines.TimeoutCancellationException) "LOCAL_MODEL_TIMEOUT" else "LOCAL_MODEL_FAILED"
-                ).put("message", error.message ?: "Gemma generation failed.").toString()
+                JSONObject()
+                    .put("ok", false)
+                    .put(
+                        "code",
+                        if (error is kotlinx.coroutines.TimeoutCancellationException) {
+                            "LOCAL_MODEL_TIMEOUT"
+                        } else {
+                            "LOCAL_MODEL_FAILED"
+                        }
+                    )
+                    .put("message", error.message ?: "Gemma generation failed.")
+                    .toString()
             }
         }
     }
 
-    private fun resetNativeConversation() {
-        val path = loadedPath ?: throw IllegalStateException("No loaded model path is available.")
-        val file = File(path)
-        if (!file.exists() || !file.isFile) throw IllegalStateException("The loaded Gemma model file is no longer available.")
-
-        runBlocking(Dispatchers.IO) {
-            withTimeout(60_000L) {
-                if (engine.state.value.isModelLoaded) engine.cleanUp()
-                engine.state.first { it is InferenceEngine.State.Initialized }
-                engine.loadModel(file.absolutePath)
-                engine.setSystemPrompt(systemPrompt)
-                engine.state.first { it is InferenceEngine.State.ModelReady }
-            }
-        }
-    }
-
-    private fun buildSingleTurnPrompt(messages: JSONArray): String {
-        if (messages.length() == 0) return "Please respond directly to the user."
-
-        val transcript = StringBuilder()
-        for (index in 0 until messages.length()) {
+    private fun latestUserPrompt(messages: JSONArray): String {
+        for (index in messages.length() - 1 downTo 0) {
             val message = messages.optJSONObject(index) ?: continue
-            val role = message.optString("role", "user")
-            val content = message.optString("content", "").trim()
-            if (content.isBlank()) continue
-            transcript.append(if (role == "assistant") "Assistant: " else "User: ")
-                .append(content).append("\n")
+            if (message.optString("role", "user") != "assistant") {
+                val content = message.optString("content", "").trim()
+                if (content.isNotBlank()) return content
+            }
         }
-        transcript.append("\nAssistant:")
-        return transcript.toString()
+        return "Please respond directly to the user."
     }
 
     @Synchronized
