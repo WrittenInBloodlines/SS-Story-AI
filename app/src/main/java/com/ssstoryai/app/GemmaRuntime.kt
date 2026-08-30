@@ -70,10 +70,8 @@ class GemmaRuntime(context: Context) {
             try {
                 val request = JSONObject(requestJson)
                 val messages = request.optJSONArray("messages") ?: JSONArray()
-                val predictLength = request.optInt("maxTokens", 256).coerceIn(1, 256)
+                val predictLength = request.optInt("maxTokens", 512).coerceIn(1, 512)
 
-                // Only one native generation is allowed at a time. This avoids
-                // overlapping requests corrupting llama.cpp's conversation state.
                 runBlocking(Dispatchers.IO) {
                     withTimeout(10_000L) {
                         engine.state.first { it is InferenceEngine.State.ModelReady }
@@ -92,7 +90,7 @@ class GemmaRuntime(context: Context) {
                                 try {
                                     tokenListener?.onToken(token)
                                 } catch (_: Throwable) {
-                                    // UI streaming failures must never abort inference.
+                                    // UI streaming failures must never abort native inference.
                                 }
                             }
                         }
