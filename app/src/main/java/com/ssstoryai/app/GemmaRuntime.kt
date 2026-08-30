@@ -72,13 +72,17 @@ class GemmaRuntime(context: Context) {
                 val messages = request.optJSONArray("messages") ?: JSONArray()
                 val predictLength = request.optInt("maxTokens", 512).coerceIn(1, 512)
 
-                runBlocking(Dispatchers.IO) {
-                    withTimeout(10_000L) {
-                        engine.state.first { it is InferenceEngine.State.ModelReady }
-                    }
-                }
+                /*
+                 * The native engine keeps its own conversation state. If we only
+                 * send the newest user message, old native turns silently keep
+                 * accumulating until the context becomes unstable or the model
+                 * returns zero tokens. Rebuild the native conversation from the
+                 * WebView transcript for every request so one long chat cannot
+                 * poison later generations.
+                 */
+                resetNativeConversation()
 
-                val prompt = latestUserPrompt(messages)
+                val prompt = buildConversationPrompt(messages)
                 val result = StringBuilder()
 
                 runBlocking(Dispatchers.IO) {
@@ -94,6 +98,11 @@ class GemmaRuntime(context: Context) {
                                 }
                             }
                         }
+
+                        // collect() can finish slightly before the native engine
+                        // has returned to ModelReady. Do not release the lock
+                        // early or the next chat message can race the engine.
+                        engine.state.first { it is InferenceEngine.State.ModelReady }
                     }
                 }
 
@@ -127,15 +136,62 @@ class GemmaRuntime(context: Context) {
         }
     }
 
-    private fun latestUserPrompt(messages: JSONArray): String {
-        for (index in messages.length() - 1 downTo 0) {
-            val message = messages.optJSONObject(index) ?: continue
-            if (message.optString("role", "user") != "assistant") {
-                val content = message.optString("content", "").trim()
-                if (content.isNotBlank()) return content
+    private fun resetNativeConversation() {
+        val path = loadedPath ?: throw IllegalStateException("No loaded model path is available.")
+        val file = File(path)
+        if (!file.exists() || !file.isFile) {
+            throw IllegalStateException("The loaded Gemma model file is no longer available.")
+        }
+
+        runBlocking(Dispatchers.IO) {
+            withTimeout(60_000L) {
+                if (engine.state.value.isModelLoaded) {
+                    engine.cleanUp()
+                }
+                engine.state.first { it is InferenceEngine.State.Initialized }
+                engine.loadModel(file.absolutePath)
+                engine.setSystemPrompt(systemPrompt)
+                engine.state.first { it is InferenceEngine.State.ModelReady }
             }
         }
-        return "Please respond directly to the user."
+    }
+
+    private fun buildConversationPrompt(messages: JSONArray): String {
+        if (messages.length() == 0) return "Please respond directly to the user."
+
+        /*
+         * Keep recent turns only. The exact character cap prevents a very large
+         * project chat from eventually exceeding Gemma's usable context while
+         * still preserving enough recent conversation for follow-up questions.
+         */
+        val maxCharacters = 24_000
+        val turns = ArrayList<Pair<String, String>>()
+
+        for (index in 0 until messages.length()) {
+            val message = messages.optJSONObject(index) ?: continue
+            val role = message.optString("role", "user")
+            val content = message.optString("content", "").trim()
+            if (content.isBlank()) continue
+            turns.add((if (role == "assistant") "Assistant" else "User") to content)
+        }
+
+        val selected = ArrayList<Pair<String, String>>()
+        var used = 0
+        for (index in turns.indices.reversed()) {
+            val turn = turns[index]
+            val size = turn.first.length + turn.second.length + 3
+            if (selected.isNotEmpty() && used + size > maxCharacters) break
+            selected.add(turn)
+            used += size
+        }
+        selected.reverse()
+
+        return buildString {
+            for ((role, content) in selected) {
+                append(role).append(": ").append(content).append("\n")
+            }
+            append("\nAssistant:")
+        }
     }
 
     @Synchronized
