@@ -73,8 +73,17 @@ class GemmaRuntime(context: Context) {
                 // Rebuild that state when a real chat history is supplied so a
                 // second user message cannot be interpreted as another turn in
                 // the old native conversation.
-                if (messages.length() > 1) resetNativeConversation()
-                else engine.state.first { it is InferenceEngine.State.ModelReady }
+                if (messages.length() > 1) {
+                    resetNativeConversation()
+                } else {
+                    // Flow.first is suspend, so this readiness check must run
+                    // inside a coroutine even though generate() itself is synchronous.
+                    runBlocking(Dispatchers.IO) {
+                        withTimeout(10_000L) {
+                            engine.state.first { it is InferenceEngine.State.ModelReady }
+                        }
+                    }
+                }
 
                 val prompt = buildSingleTurnPrompt(messages)
                 val result = StringBuilder()
