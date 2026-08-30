@@ -72,11 +72,9 @@ class GemmaRuntime(context: Context) {
                 val messages = request.optJSONArray("messages") ?: JSONArray()
                 val predictLength = request.optInt("maxTokens", 32).coerceIn(1, 64)
 
-                // Keep the native conversation alive between requests. Re-loading
-                // the GGUF model for every message was the main reason later
-                // questions took minutes and made the chat appear to ignore input.
-                // The native engine already owns the previous assistant turn, so
-                // only send the newest user message on subsequent requests.
+                // The native conversation stays loaded between requests. Waiting
+                // for ModelReady here prevents a new request from racing the
+                // previous generation while avoiding an expensive model reload.
                 runBlocking(Dispatchers.IO) {
                     withTimeout(10_000L) {
                         engine.state.first { it is InferenceEngine.State.ModelReady }
@@ -99,10 +97,13 @@ class GemmaRuntime(context: Context) {
                                 }
                             }
                         }
-                        engine.state.first { it is InferenceEngine.State.ModelReady }
                     }
                 }
 
+                // Do NOT wait for another ModelReady state after the token flow
+                // completes. The final token has already been delivered to the
+                // WebView, and waiting for the state transition added several
+                // seconds before the UI received the completed response.
                 val output = result.toString()
                 if (output.isBlank()) {
                     return@withLock JSONObject()
