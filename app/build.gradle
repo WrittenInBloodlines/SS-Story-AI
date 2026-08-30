@@ -27,6 +27,9 @@ android {
         }
         release {
             minifyEnabled false
+            // This is a local/test release, so use the standard debug keystore
+            // to keep the generated APK directly installable without secrets.
+            signingConfig signingConfigs.debug
         }
     }
 
