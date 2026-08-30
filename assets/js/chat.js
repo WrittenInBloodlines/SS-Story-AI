@@ -124,7 +124,7 @@ function generateWithGemma() {
   if (!currentChat || gemmaGenerating) return;
   const messages = (currentChat.messages || []).map(message => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.text || '' }));
   const requestId = `gemma-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  const payload = JSON.stringify({ messages, maxTokens: 32 });
+  const payload = JSON.stringify({ messages, maxTokens: 512 });
   gemmaGenerating = true; input.disabled = true; status.textContent = 'Gemma • Generating…'; createGemmaBubble();
   let settled = false;
   let timeout = null;
