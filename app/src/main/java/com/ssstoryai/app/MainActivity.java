@@ -5,6 +5,8 @@ import android.content.Context;
 import android.content.Intent;
 import android.net.Uri;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.print.PrintAttributes;
 import android.print.PrintManager;
 import android.webkit.JavascriptInterface;
@@ -21,11 +23,16 @@ import org.json.JSONObject;
 import java.io.File;
 import java.io.InputStream;
 import java.io.FileOutputStream;
+import java.util.concurrent.ConcurrentHashMap;
 
 public class MainActivity extends Activity {
     private static final int MODEL_PICK_REQUEST = 4101;
+    private static final long TOKEN_FLUSH_MS = 30L;
     private WebView webView;
     private GemmaRuntime gemmaRuntime;
+    private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final ConcurrentHashMap<String, StringBuilder> pendingGemmaTokens = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<String, Boolean> tokenFlushScheduled = new ConcurrentHashMap<>();
 
     public class AndroidBridge {
         @JavascriptInterface
@@ -61,9 +68,7 @@ public class MainActivity extends Activity {
 
         /**
          * Starts local Gemma generation without blocking the WebView JavaScript
-         * bridge. The previous synchronous bridge call could leave the WebView
-         * waiting for the entire native inference, which made the app appear
-         * frozen while Gemma was generating.
+         * bridge. Native inference remains off the UI thread.
          */
         @JavascriptInterface
         public void generateGemmaAsync(String requestId, String payload) {
@@ -184,20 +189,58 @@ public class MainActivity extends Activity {
         });
     }
 
+    /**
+     * llama.cpp can emit many tokens per second. Calling evaluateJavascript()
+     * once for every token can overwhelm the WebView's UI queue and make the
+     * whole application unstable during longer generations. Buffer tokens for
+     * a very short interval and deliver them as one UI update, preserving live
+     * streaming while drastically reducing UI-bridge traffic.
+     */
     private void notifyGemmaToken(String requestId, String token) {
-        runOnUiThread(() -> {
-            if (webView == null || token == null || token.isEmpty()) return;
-            String script = "window.dispatchEvent(new CustomEvent('ss-gemma-token',{detail:{requestId:"
-                    + JSONObject.quote(requestId == null ? "" : requestId)
-                    + ",token:" + JSONObject.quote(token)
-                    + "}}));";
-            webView.evaluateJavascript(script, null);
-        });
+        if (requestId == null || token == null || token.isEmpty()) return;
+
+        StringBuilder buffer = pendingGemmaTokens.computeIfAbsent(requestId, ignored -> new StringBuilder());
+        synchronized (buffer) {
+            buffer.append(token);
+        }
+
+        if (tokenFlushScheduled.putIfAbsent(requestId, Boolean.TRUE) == null) {
+            mainHandler.postDelayed(() -> flushGemmaTokens(requestId), TOKEN_FLUSH_MS);
+        }
+    }
+
+    private void flushGemmaTokens(String requestId) {
+        tokenFlushScheduled.remove(requestId);
+        StringBuilder buffer = pendingGemmaTokens.get(requestId);
+        if (buffer == null) return;
+
+        final String text;
+        synchronized (buffer) {
+            text = buffer.toString();
+            buffer.setLength(0);
+        }
+
+        if (text.isEmpty() || webView == null) return;
+        String script = "window.dispatchEvent(new CustomEvent('ss-gemma-token',{detail:{requestId:"
+                + JSONObject.quote(requestId)
+                + ",token:" + JSONObject.quote(text)
+                + "}}));";
+        webView.evaluateJavascript(script, null);
+    }
+
+    private void clearGemmaTokenBuffer(String requestId) {
+        if (requestId == null) return;
+        Runnable flush = () -> flushGemmaTokens(requestId);
+        mainHandler.post(flush);
+        pendingGemmaTokens.remove(requestId);
+        tokenFlushScheduled.remove(requestId);
     }
 
     private void notifyGemmaGeneration(String requestId, boolean ok, String code, String message, String text) {
         runOnUiThread(() -> {
             if (webView == null) return;
+            flushGemmaTokens(requestId);
+            clearGemmaTokenBuffer(requestId);
             String script = "window.dispatchEvent(new CustomEvent('ss-gemma-generation',{detail:{requestId:"
                     + JSONObject.quote(requestId == null ? "" : requestId)
                     + ",ok:" + ok
@@ -230,6 +273,9 @@ public class MainActivity extends Activity {
 
     @Override
     protected void onDestroy() {
+        mainHandler.removeCallbacksAndMessages(null);
+        pendingGemmaTokens.clear();
+        tokenFlushScheduled.clear();
         if (gemmaRuntime != null) gemmaRuntime.close();
         if (webView != null) {
             webView.destroy();
