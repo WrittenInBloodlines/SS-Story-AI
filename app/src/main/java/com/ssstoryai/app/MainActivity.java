@@ -75,7 +75,7 @@ public class MainActivity extends Activity {
             new Thread(() -> {
                 String result;
                 try {
-                    result = gemmaRuntime.generate(payload);
+                    result = gemmaRuntime.generate(payload, token -> notifyGemmaToken(requestId, token));
                 } catch (Throwable error) {
                     result = "{\"ok\":false,\"code\":\"LOCAL_MODEL_FAILED\",\"message\":\"Gemma generation failed.\"}";
                 }
@@ -180,6 +180,17 @@ public class MainActivity extends Activity {
             if (webView == null) return;
             String script = "window.dispatchEvent(new CustomEvent('ss-gemma-status',{detail:{ok:" + ok
                     + ",message:" + JSONObject.quote(message) + "}}));";
+            webView.evaluateJavascript(script, null);
+        });
+    }
+
+    private void notifyGemmaToken(String requestId, String token) {
+        runOnUiThread(() -> {
+            if (webView == null || token == null || token.isEmpty()) return;
+            String script = "window.dispatchEvent(new CustomEvent('ss-gemma-token',{detail:{requestId:"
+                    + JSONObject.quote(requestId == null ? "" : requestId)
+                    + ",token:" + JSONObject.quote(token)
+                    + "}}));";
             webView.evaluateJavascript(script, null);
         });
     }
