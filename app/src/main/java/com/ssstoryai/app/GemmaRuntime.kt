@@ -70,11 +70,10 @@ class GemmaRuntime(context: Context) {
             try {
                 val request = JSONObject(requestJson)
                 val messages = request.optJSONArray("messages") ?: JSONArray()
-                val predictLength = request.optInt("maxTokens", 32).coerceIn(1, 64)
+                val predictLength = request.optInt("maxTokens", 256).coerceIn(1, 256)
 
-                // The native conversation stays loaded between requests. Waiting
-                // for ModelReady here prevents a new request from racing the
-                // previous generation while avoiding an expensive model reload.
+                // Only one native generation is allowed at a time. This avoids
+                // overlapping requests corrupting llama.cpp's conversation state.
                 runBlocking(Dispatchers.IO) {
                     withTimeout(10_000L) {
                         engine.state.first { it is InferenceEngine.State.ModelReady }
@@ -100,16 +99,12 @@ class GemmaRuntime(context: Context) {
                     }
                 }
 
-                // Do NOT wait for another ModelReady state after the token flow
-                // completes. The final token has already been delivered to the
-                // WebView, and waiting for the state transition added several
-                // seconds before the UI received the completed response.
                 val output = result.toString()
                 if (output.isBlank()) {
                     return@withLock JSONObject()
                         .put("ok", false)
                         .put("code", "LOCAL_MODEL_EMPTY_RESPONSE")
-                        .put("message", "Gemma processed the request but returned no generated tokens.")
+                        .put("message", "Gemma processed the request but returned no generated tokens. Try the request again.")
                         .toString()
                 }
 
