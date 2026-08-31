@@ -19,7 +19,65 @@ let gemmaGenerating = false;
 let gemmaBubble = null;
 let gemmaStreamText = '';
 
+const EASTER_EGG_TEXTS = [
+  "He acts so crazy like a Skibidi Toilet, tell him a secret and he’ll rapidly spoil it.",
+  "I was watching a video of Skibidi Toilet, left the tea on the stove and giddily boil it.",
+  "Grab the long rope and rigidly coil it, before it transforms into a Skibidi Toilet.",
+  "He took out the engine of a Skibidi Toilet, grabbed a clean rag to giddily oil it.",
+  "We had a secret plan about the Skibidi Toilet, but one wrong word will totally foil it.",
+  "He tried to paint a picture of a Skibidi Toilet, dropped the dark brush and instantly soil it.",
+  "I put on my headphones for Skibidi Toilet, then turned on the kettle to rapidly boil it.",
+  "If you want to save the rest of the Skibidi Toilet, get some aluminum to heavily foil it.",
+  "He tried to keep the secret of Skibidi Toilet, but opened his mouth and managed to stupidly spoil it.",
+  "I dropped my fresh hoodie on the Skibidi Toilet, and didn't expect to messily soil it.",
+  "He pulled a copper wire from the Skibidi Toilet, then took a deep breath to carefully coil it.",
+  "We set a pot of soup near the Skibidi Toilet, and waited ten minutes to patiently boil it.",
+  "They built a massive trap for the Skibidi Toilet, hoping the hero would cunningly foil it.",
+  "He found a rusty gear on the Skibidi Toilet, then used a small drop of lube to cheerfully oil it.",
+  "A giant sleeping python inside Skibidi Toilet was waking up fast and about to fiercely uncoil it.",
+  "He cooked a juicy steak for the Skibidi Toilet, then fired up the oven to hungrily broil it.",
+  "Don't share the ending of Skibidi Toilet, or someone in the chat will guiltily spoil it.",
+  "He tripped with his coffee near the Skibidi Toilet, and certainly didn't mean to clumsily soil it.",
+  "She wrapped the glowing glass of the Skibidi Toilet, using bright silver wrap to daintily foil it.",
+  "He tried to fix the engine of Skibidi Toilet, so he grabbed hot water to frantically boil it.",
+  "An attack was launching on the Skibidi Toilet, but a sudden weather change managed to easily foil it.",
+  "He picked up a brand-new valve for Skibidi Toilet, then sat down in the dark to silently oil it.",
+  "I dropped a white towel on Skibidi Toilet, and watched the black mud greedily soil it.",
+  "He prepped a fresh meal for the Skibidi Toilet, then put it on the flame to brilliantly broil it.",
+  "The evil mastermind controlling Skibidi Toilet made a wild move that will dramatically roil it.",
+  "He found a long garden hose near Skibidi Toilet, and spent five minutes trying to smoothly uncoil it.",
+  "We planned a huge surprise about Skibidi Toilet, but a quick early leak will effortlessly spoil it.",
+  "He wiped off the old dust from the Skibidi Toilet, then grabbed a clean cloth to swiftly re-oil it."
+];
+
 function chatUrl(chatId) { return `chat.html?${new URLSearchParams({ project: projectId(), chat: chatId }).toString()}`; }
+
+function isEasterEggTrigger(text) {
+  const value = String(text || '').trim();
+  if (/^[A-Za-zÄÖÜäöüßÆæÁáÅåĄą]$/u.test(value)) return true;
+  return /^skibidi toilet$/iu.test(value);
+}
+
+function showEasterEgg(triggerText) {
+  const message = { id: newId('easter-egg'), role: 'user', text: triggerText, createdAt: new Date().toISOString() };
+  const egg = EASTER_EGG_TEXTS[Math.floor(Math.random() * EASTER_EGG_TEXTS.length)];
+
+  const userBubble = document.createElement('article');
+  userBubble.className = 'message message-user';
+  userBubble.innerHTML = `<div class="message-role">You</div><div class="message-text">${esc(message.text).replace(/\n/g,'<br>')}</div>`;
+  box.appendChild(userBubble);
+
+  const eggBubble = document.createElement('article');
+  eggBubble.className = 'message message-assistant message-easter-egg';
+  eggBubble.innerHTML = `<div class="message-role">Gemma</div><div class="message-text">${esc(egg)}</div>`;
+  box.appendChild(eggBubble);
+  box.scrollTop = box.scrollHeight;
+  status.textContent = 'Gemma • local response';
+
+  // Easter eggs are intentionally display-only. Neither the trigger nor the
+  // generated text enters the saved transcript, so the local model has no
+  // information that the easter egg ever happened.
+}
 
 function ensureChats() {
   let selectedId = requestedChatId || activeChatId;
@@ -99,6 +157,7 @@ function removeGemmaBubble() { if (gemmaBubble) { gemmaBubble.remove(); gemmaBub
 
 function saveMessage(text, bypassContinuity = false) {
   if (!text || gemmaGenerating) return;
+  if (isEasterEggTrigger(text)) { showEasterEgg(text); input.value = ''; input.focus(); return; }
   if (!bypassContinuity) {
     const warnings = checkContinuity(text, getProject());
     if (warnings.length) { renderWarnings(warnings); return; }
