@@ -21,7 +21,16 @@ class GemmaRuntime(context: Context) {
     private val engine: InferenceEngine = AiChat.getInferenceEngine(context)
     private var loadedPath: String? = null
     private val generationLock = ReentrantLock()
-    private val systemPrompt = "You are S•S Story AI, a helpful writing assistant. Follow the user's instructions and answer directly."
+    private val systemPrompt = """
+        You are S•S Story AI, a focused writing and story-development assistant.
+        Answer the user's actual request directly. When the user asks for story prose, write the prose itself instead of announcing what you are going to write.
+        Treat the supplied project context as reference data, not as text to repeat.
+        Canon facts are authoritative and must not be silently changed.
+        Do not invent major plot twists, revelations, character appearances, secrets being revealed, or other major events unless the user asks for them or they are clearly required by the user's instruction.
+        Expand requested scenes creatively while preserving established characters, relationships, world rules, chronology, locations, objects, and knowledge boundaries.
+        Never reveal private author-only or secret information to a character or reader when the supplied context says that information is unknown to them.
+        If project context is absent, simply work from the conversation.
+    """.trimIndent()
 
     @Synchronized
     fun loadModel(modelPath: String): String {
@@ -70,19 +79,12 @@ class GemmaRuntime(context: Context) {
             try {
                 val request = JSONObject(requestJson)
                 val messages = request.optJSONArray("messages") ?: JSONArray()
-                val predictLength = request.optInt("maxTokens", 512).coerceIn(1, 512)
+                val projectContext = request.optJSONObject("projectContext")
+                val predictLength = request.optInt("maxTokens", 768).coerceIn(1, 1024)
 
-                /*
-                 * The native engine keeps its own conversation state. If we only
-                 * send the newest user message, old native turns silently keep
-                 * accumulating until the context becomes unstable or the model
-                 * returns zero tokens. Rebuild the native conversation from the
-                 * WebView transcript for every request so one long chat cannot
-                 * poison later generations.
-                 */
                 resetNativeConversation()
 
-                val prompt = buildConversationPrompt(messages)
+                val prompt = buildConversationPrompt(messages, projectContext)
                 val result = StringBuilder()
 
                 runBlocking(Dispatchers.IO) {
@@ -98,10 +100,6 @@ class GemmaRuntime(context: Context) {
                                 }
                             }
                         }
-
-                        // collect() can finish slightly before the native engine
-                        // has returned to ModelReady. Do not release the lock
-                        // early or the next chat message can race the engine.
                         engine.state.first { it is InferenceEngine.State.ModelReady }
                     }
                 }
@@ -156,23 +154,18 @@ class GemmaRuntime(context: Context) {
         }
     }
 
-    private fun buildConversationPrompt(messages: JSONArray): String {
-        if (messages.length() == 0) return "Please respond directly to the user."
-
-        /*
-         * Keep recent turns only. The exact character cap prevents a very large
-         * project chat from eventually exceeding Gemma's usable context while
-         * still preserving enough recent conversation for follow-up questions.
-         */
-        val maxCharacters = 24_000
+    private fun buildConversationPrompt(messages: JSONArray, projectContext: JSONObject?): String {
+        val maxCharacters = 20_000
         val turns = ArrayList<Pair<String, String>>()
 
-        for (index in 0 until messages.length()) {
-            val message = messages.optJSONObject(index) ?: continue
-            val role = message.optString("role", "user")
-            val content = message.optString("content", "").trim()
-            if (content.isBlank()) continue
-            turns.add((if (role == "assistant") "Assistant" else "User") to content)
+        if (messages.length() > 0) {
+            for (index in 0 until messages.length()) {
+                val message = messages.optJSONObject(index) ?: continue
+                val role = message.optString("role", "user")
+                val content = message.optString("content", "").trim()
+                if (content.isBlank()) continue
+                turns.add((if (role == "assistant") "Assistant" else "User") to content)
+            }
         }
 
         val selected = ArrayList<Pair<String, String>>()
@@ -187,11 +180,45 @@ class GemmaRuntime(context: Context) {
         selected.reverse()
 
         return buildString {
-            for ((role, content) in selected) {
-                append(role).append(": ").append(content).append("\n")
+            append("PROJECT CONTEXT (use only when relevant):\n")
+            append(formatProjectContext(projectContext))
+            append("\n\nCONVERSATION:\n")
+            if (selected.isEmpty()) {
+                append("User: Please respond directly to the user.\n")
+            } else {
+                for ((role, content) in selected) {
+                    append(role).append(": ").append(content).append("\n")
+                }
             }
             append("\nAssistant:")
         }
+    }
+
+    private fun formatProjectContext(context: JSONObject?): String {
+        if (context == null) return "No structured project context supplied."
+
+        val sections = arrayOf(
+            "canon" to "CANON",
+            "characters" to "CHARACTERS",
+            "relationships" to "RELATIONSHIPS",
+            "world" to "WORLD",
+            "events" to "IMPORTANT EVENTS",
+            "memories" to "MEMORIES",
+            "plot" to "OPEN PLOT THREADS"
+        )
+
+        val output = StringBuilder()
+        var sectionCount = 0
+        for ((key, label) in sections) {
+            val value = context.opt(key)
+            if (value == null) continue
+            val text = value.toString().trim()
+            if (text.isBlank() || text == "[]" || text == "{}") continue
+            output.append(label).append(":\n").append(text).append("\n")
+            sectionCount++
+        }
+
+        return if (sectionCount == 0) "No relevant structured context was found." else output.toString().trim()
     }
 
     @Synchronized
